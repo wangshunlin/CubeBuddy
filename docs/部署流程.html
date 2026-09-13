@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cube Console · 标准化部署流程</title><style>:root{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#17232f;background:#f4f7f8;line-height:1.65}body{margin:0}.wrap{max-width:1060px;margin:auto;padding:28px 20px}.hero{background:#102c40;color:#fff;padding:34px 0}.hero h1{margin:0 0 8px;font-size:32px}.hero p{margin:0;color:#d7f0ee}.card{background:#fff;border:1px solid #dfe7eb;border-radius:14px;padding:22px;margin:18px 0;box-shadow:0 8px 24px #1233}.note,.warn{padding:12px 14px;border-radius:9px}.note{background:#edf4ff;border:1px solid #cfe0fa}.warn{background:#fff5e9;border:1px solid #f0d3aa}code{padding:2px 5px;background:#edf4f3;border-radius:4px}pre{padding:14px;overflow:auto;background:#122633;color:#dcebed;border-radius:9px;font-size:13px}h2{margin:0 0 12px}</style></head>
+<body><header class="hero"><div class="wrap"><h1>Cube Console + Cube Compose 部署流程</h1><p>标准目录：<code>/opt/cube-console</code>；根目录 Compose：<code>compose.yml</code>；配置：<code>.env</code>；状态：<code>state/</code>。</p></div></header><main class="wrap">
+<section class="card"><h2>一、项目结构</h2><pre>cube-console/
+├── compose.yml                 # 主编排文件
+├── .env.example                # 环境变量模板（提交 Git）
+├── .env                        # 目标环境密钥（不提交）
+├── Dockerfile                  # 配置台镜像
+├── services/gateway/           # 内置 Nginx Gateway
+├── server/ public/             # 配置台源码
+├── state/                      # 模型、术语、数据源等运行状态（不提交）
+└── docs/</pre><div class="note"><b>统一约定：</b>线上和内网都使用项目名 <code>cube-console</code> 与目录 <code>/opt/cube-console</code>。旧目录只保留归档，不作为运行入口。</div></section>
+<section class="card"><h2>二、首次部署</h2><pre>install -d -m 755 /opt/cube-console
+git clone --branch &lt;发布Tag&gt; &lt;GIT_URL&gt; /opt/cube-console
+cd /opt/cube-console
+cp .env.example .env
+chmod 600 .env
+mkdir -p state/{schema,modules,glossary,openapi}
+docker compose --env-file .env config --quiet
+docker compose --env-file .env up -d --build</pre><p>离线环境先导入镜像，再使用 <code>docker compose --env-file .env up -d --no-build</code>。</p></section>
+<section class="card"><h2>三、必须填写的 .env</h2><pre>STACK_NAME=cube-console
+GATEWAY_CUBE_PORT=18080
+GATEWAY_CONSOLE_PORT=18081
+CUBE_PUBLIC_BASE=http://内网IP:18080
+CONSOLE_PUBLIC_BASE=http://内网IP:18081
+CUBE_IMAGE=cubejs/cube:v1.7.25
+CONSOLE_IMAGE=cube-console:unified
+GATEWAY_IMAGE=cube-console-gateway:1.0.0
+CUBE_UI_ADMIN_TOKEN=随机管理令牌
+CUBEJS_API_SECRET=随机长密钥
+CUBEJS_DB_TYPE=mysql
+CUBEJS_DB_HOST=目标数据库地址
+CUBEJS_DB_PORT=3306
+CUBEJS_DB_NAME=目标数据库
+CUBEJS_DB_USER=目标用户
+CUBEJS_DB_PASS=目标密码</pre><div class="warn">容器内部通过 <code>cube_api:4000</code> 连接 Cube；数据库地址填写目标环境可达的内网 IP、服务名或 <code>host.docker.internal</code>，不要默认填写 <code>127.0.0.1</code>。</div></section>
+<section class="card"><h2>四、验证</h2><pre>docker compose --env-file .env ps
+curl http://部署机IP:18080/gateway-healthz
+curl http://部署机IP:18080/readyz
+curl http://部署机IP:18080/openapi.yaml
+curl http://部署机IP:18081/healthz</pre><ul><li>配置台：<code>http://部署机IP:18081</code></li><li>Cube/OpenAPI：<code>http://部署机IP:18080</code></li><li>首次进入后，在“数据源”中配置目标数据库，再导入业务术语和语义模型。</li></ul></section>
+<section class="card"><h2>五、升级与回滚</h2><pre>备份：tar -czf /opt/archives/cube-console-state-时间.tar.gz state
+升级：git fetch --tags &amp;&amp; git checkout &lt;新Tag&gt; &amp;&amp; docker compose --env-file .env up -d --build
+回滚：git checkout &lt;旧Tag&gt; &amp;&amp; docker compose --env-file .env up -d --build</pre><p>不要提交 <code>.env</code>、数据库密码、JWT 密钥或 <code>state/</code>。Gitea 作为版本入口，部署机使用只读 Deploy Key。</p></section>
+</main></body></html>

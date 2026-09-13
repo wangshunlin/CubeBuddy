@@ -1,0 +1,117 @@
+name: ${STACK_NAME:-cube-console}
+
+services:
+  # 一次性初始化状态目录，保证首次离线部署也有可加载的 cube.py。
+  cube_init:
+    image: ${CUBE_IMAGE:-cubejs/cube:v1.7.25}
+    restart: "no"
+    command: ["sh", "-ec", "mkdir -p /state/schema /state/modules /state/openapi; if [ ! -s /state/cube.py ]; then printf 'from cube import config\\n' > /state/cube.py; fi"]
+    volumes:
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}:/state
+
+  cube_api:
+    image: ${CUBE_IMAGE:-cubejs/cube:v1.7.25}
+    restart: unless-stopped
+    depends_on:
+      cube_init:
+        condition: service_completed_successfully
+    env_file:
+      - ${CUBE_COMPOSE_ENV_READ_PATH:-.env}
+    environment:
+      PORT: "4000"
+      CUBEJS_DEV_MODE: ${CUBEJS_DEV_MODE:-false}
+      CUBEJS_CACHE_AND_QUEUE_DRIVER: memory
+      CUBEJS_DEFAULT_API_SCOPES: meta,data,sql
+      CUBEJS_TELEMETRY: "false"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}/schema:/cube/conf/model/cubes:ro
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}/cube.py:/cube/conf/cube.py:ro
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}/modules:/cube/conf/modules:ro
+    expose:
+      - "4000"
+    networks:
+      - cube_console
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/readyz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  cube_refresh_worker:
+    image: ${CUBE_IMAGE:-cubejs/cube:v1.7.25}
+    restart: unless-stopped
+    depends_on:
+      cube_init:
+        condition: service_completed_successfully
+    env_file:
+      - ${CUBE_COMPOSE_ENV_READ_PATH:-.env}
+    environment:
+      PORT: "4000"
+      CUBEJS_DEV_MODE: "false"
+      CUBEJS_REFRESH_WORKER: "true"
+      CUBEJS_CACHE_AND_QUEUE_DRIVER: memory
+      CUBEJS_TELEMETRY: "false"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}/schema:/cube/conf/model/cubes:ro
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}/cube.py:/cube/conf/cube.py:ro
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}/modules:/cube/conf/modules:ro
+    networks:
+      - cube_console
+
+  cube_console:
+    # 生产编排只允许运行已构建镜像；本地/发布构建使用 compose.build.yml。
+    image: ${CONSOLE_IMAGE:-cube-console:local}
+    restart: unless-stopped
+    env_file:
+      - ${CUBE_COMPOSE_ENV_READ_PATH:-.env}
+    environment:
+      NODE_ENV: production
+      PORT: "4010"
+      CUBE_DEPLOY_DIR: /opt/cube-deploy
+      CUBE_COMPOSE_FILE: /tmp/cube-console-compose.yml
+      CUBE_COMPOSE_ENV_PATH: /tmp/cube-console.env
+      CUBE_DEPLOY_HOST_DIR: ${CUBE_DEPLOY_HOST_DIR:-./state}
+      CUBE_CONSOLE_SOURCE_HOST_DIR: ${CUBE_CONSOLE_SOURCE_HOST_DIR:-.}
+      CUBE_COMPOSE_ENV_HOST_PATH: ${CUBE_COMPOSE_ENV_HOST_PATH:-./.env}
+      CUBE_COMPOSE_ENV_READ_PATH: /tmp/cube-console.env
+      CUBE_API_BASE: http://cube_api:4000
+      CUBE_PUBLIC_BASE: ${CUBE_PUBLIC_BASE:-http://127.0.0.1:18080}
+      CONSOLE_PUBLIC_BASE: ${CONSOLE_PUBLIC_BASE:-http://127.0.0.1:18081}
+    volumes:
+      - ${CUBE_DEPLOY_HOST_DIR:-./state}:/opt/cube-deploy
+      - ${CUBE_CONSOLE_SOURCE_HOST_DIR:-.}/compose.yml:/tmp/cube-console-compose.yml:ro
+      - ${CUBE_COMPOSE_ENV_HOST_PATH:-./.env}:/tmp/cube-console.env
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "4010"
+    networks:
+      - cube_console
+
+  cube_gateway:
+    # 生产编排只允许运行已构建镜像；本地/发布构建使用 compose.build.yml。
+    image: ${GATEWAY_IMAGE:-cube-console-gateway:local}
+    restart: unless-stopped
+    depends_on:
+      cube_api:
+        condition: service_healthy
+      cube_console:
+        condition: service_started
+    ports:
+      - "${GATEWAY_CUBE_PORT:-18080}:80"
+      - "${GATEWAY_CONSOLE_PORT:-18081}:81"
+    networks:
+      - cube_console
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+networks:
+  cube_console:
+    driver: bridge

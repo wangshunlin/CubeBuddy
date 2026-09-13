@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>服务密钥 · 简化版原型</title>
+  <style>
+    :root {
+      --ink: #344054;
+      --muted: #667085;
+      --subtle: #98a2b3;
+      --line: #eaecf0;
+      --line-strong: #d0d5dd;
+      --surface: #fff;
+      --page: #f8fafc;
+      --primary: #344054;
+      --primary-hover: #1d2939;
+      --danger: #d92d20;
+      --danger-bg: #fff5f3;
+      --success: #039855;
+      --success-bg: #ecfdf3;
+      --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .05);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--page);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: var(--page); }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    .prototype-bar {
+      padding: 9px 32px;
+      color: #475467;
+      background: #f2f4f7;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .page { max-width: 1120px; margin: 0 auto; padding: 54px 32px 80px; }
+    .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+    .page-head h1 { margin: 0; color: #344054; font-size: 28px; line-height: 1.25; letter-spacing: -.5px; }
+    .page-head p { margin: 9px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+    .panel { overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+    .panel-head strong { font-size: 16px; }
+    .panel-head span { color: var(--muted); font-size: 13px; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; min-width: 720px; border-collapse: collapse; table-layout: fixed; }
+    th, td { padding: 17px 24px; text-align: left; border-bottom: 1px solid var(--line); }
+    th { color: #667085; background: #fcfcfd; font-size: 13px; font-weight: 600; }
+    td { color: #475467; font-size: 15px; }
+    th:first-child, td:first-child { width: 43%; }
+    th:nth-child(2), td:nth-child(2) { width: 25%; }
+    th:nth-child(3), td:nth-child(3) { width: 22%; }
+    th:last-child, td:last-child { width: 10%; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .key { color: #344054; font: 15px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .1px; white-space: nowrap; }
+    .never { color: #475467; }
+    .actions { display: flex; align-items: center; justify-content: flex-end; gap: 13px; }
+    .icon-button { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; color: #667085; background: transparent; border: 1px solid transparent; border-radius: 7px; }
+    .icon-button:hover { color: var(--primary); background: #f2f4f7; border-color: var(--line); }
+    .icon-button.danger:hover { color: var(--danger); background: var(--danger-bg); border-color: #fecdca; }
+    .icon-button svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    .panel-foot { padding: 24px; border-top: 1px solid var(--line); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 42px; padding: 0 18px; color: #344054; background: #fff; border: 1px solid var(--line-strong); border-radius: 9px; font-size: 14px; font-weight: 600; box-shadow: 0 1px 2px rgba(16, 24, 40, .04); }
+    .btn:hover { background: #f9fafb; border-color: #98a2b3; }
+    .btn.primary { color: #fff; background: var(--primary); border-color: var(--primary); }
+    .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+    .btn.danger { color: var(--danger); border-color: #fecdca; background: #fff; }
+    .btn.danger:hover { background: var(--danger-bg); }
+    .btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .empty { padding: 55px 24px; color: var(--muted); text-align: center; }
+    .empty strong, .empty span { display: block; }
+    .empty strong { color: var(--ink); font-size: 15px; }
+    .empty span { margin-top: 7px; font-size: 13px; }
+
+    .overlay { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; padding: 20px; background: rgba(16, 24, 40, .42); }
+    .overlay.show { display: grid; }
+    .modal { width: min(460px, 100%); padding: 26px; background: #fff; border-radius: 14px; box-shadow: 0 24px 64px rgba(16, 24, 40, .2); }
+    .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .modal h2 { margin: 0; color: var(--ink); font-size: 19px; }
+    .modal-head p { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .close { display: grid; place-items: center; width: 32px; height: 32px; margin: -5px -7px 0 0; padding: 0; color: var(--muted); background: transparent; border: 0; border-radius: 6px; font-size: 25px; line-height: 1; }
+    .close:hover { background: #f2f4f7; }
+    .modal-body { margin-top: 22px; }
+    .field-label { display: block; color: var(--ink); font-size: 13px; font-weight: 600; }
+    .field-label input, .modal-body > input { width: 100%; height: 42px; margin-top: 8px; padding: 0 12px; color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; outline: none; }
+    .field-label input:focus, .modal-body > input:focus { border-color: #98a2b3; box-shadow: 0 0 0 3px #f2f4f7; }
+    .helper { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+    .success-box { padding: 14px; color: #05603a; background: var(--success-bg); border: 1px solid #abefc6; border-radius: 9px; }
+    .success-box strong { display: block; font-size: 13px; }
+    .secret-box { display: flex; align-items: center; gap: 8px; margin-top: 13px; padding: 12px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; }
+    .secret-box code { min-width: 0; flex: 1; overflow-wrap: anywhere; color: #344054; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .copy-inline { flex: 0 0 auto; padding: 5px 8px; color: #344054; background: #fff; border: 1px solid var(--line-strong); border-radius: 6px; font-size: 12px; font-weight: 600; }
+    .copy-inline:hover { background: #f2f4f7; }
+    .warning { margin: 12px 0 0; color: #667085; font-size: 12px; line-height: 1.55; }
+
+    .toast { position: fixed; left: 50%; bottom: 28px; z-index: 20; padding: 10px 15px; color: #fff; background: #1d2939; border-radius: 8px; box-shadow: 0 8px 24px rgba(16, 24, 40, .18); font-size: 13px; opacity: 0; transform: translate(-50%, 10px); pointer-events: none; transition: .18s ease; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 700px) {
+      .prototype-bar { padding: 9px 16px; }
+      .page { padding: 32px 16px 56px; }
+      .page-head { align-items: flex-start; flex-direction: column; gap: 18px; margin-bottom: 20px; }
+      .page-head h1 { font-size: 24px; }
+      .panel-head, th, td, .panel-foot { padding-left: 16px; padding-right: 16px; }
+      .panel-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+    }
+  </style>
+  <link rel="stylesheet" href="../styles/typography.css">
+</head>
+<body>
+  <div class="prototype-bar">原型预览 · 仅演示界面交互，不会写入真实系统</div>
+
+  <main class="page">
+    <header class="page-head">
+      <div>
+        <h1>服务密钥</h1>
+        <p>创建用于访问 Cube API 的密钥。完整密钥只会在创建成功后展示一次。</p>
+      </div>
+      <button class="btn primary" id="createKeyButton" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        创建密钥
+      </button>
+    </header>
+
+    <section class="panel" aria-labelledby="key-list-title">
+      <div class="panel-head">
+        <strong id="key-list-title">密钥列表</strong>
+        <span id="keyCount">1 个密钥</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>密钥</th><th>创建时间</th><th>最后使用</th><th aria-label="操作"></th></tr>
+          </thead>
+          <tbody id="keyRows"></tbody>
+        </table>
+      </div>
+      <div class="panel-foot" id="panelFoot"></div>
+    </section>
+  </main>
+
+  <div class="overlay" id="createOverlay" role="presentation">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="createTitle">
+      <div class="modal-head">
+        <div><h2 id="createTitle">创建密钥</h2><p>创建后请立即复制，关闭窗口后将无法再次查看完整内容。</p></div>
+        <button class="close" type="button" data-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body" id="createBody">
+        <label class="field-label" for="keyLabel">密钥备注（可选）</label>
+        <input id="keyLabel" type="text" maxlength="40" placeholder="例如：报表服务">
+        <p class="helper">备注只用于在列表中识别密钥，不会影响权限。</p>
+      </div>
+      <div class="modal-actions" id="createActions">
+        <button class="btn" type="button" data-close>取消</button>
+        <button class="btn primary" id="confirmCreate" type="button">创建密钥</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay" id="deleteOverlay" role="presentation">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+      <div class="modal-head">
+        <div><h2 id="deleteTitle">删除这个密钥？</h2><p>删除后，使用该密钥的服务将无法继续访问 Cube API。</p></div>
+        <button class="close" type="button" data-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" data-close>取消</button>
+        <button class="btn danger" id="confirmDelete" type="button">确认删除</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const rows = [
+      { id: 1, key: "app...br2bckxcIXVrQDxvGg62", fullKey: "app_demo_br2bckxcIXVrQDxvGg62", created: "2026-08-26 05:28", used: "从未", label: "" },
+    ];
+    let deletingId = null;
+    let toastTimer;
+
+    const icons = {
+      copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="1.5"/><path d="M5 16V5.5A1.5 1.5 0 0 1 6.5 4H16"/></svg>',
+      trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l.8 13h8.4L17 7M10 11v5M14 11v5"/></svg>',
+    };
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    }
+
+    function renderRows() {
+      const body = document.querySelector("#keyRows");
+      const foot = document.querySelector("#panelFoot");
+      document.querySelector("#keyCount").textContent = `${rows.length} 个密钥`;
+      body.innerHTML = rows.length ? rows.map((row) => `
+        <tr>
+          <td><span class="key" title="${escapeHtml(row.key)}">${escapeHtml(row.key)}</span>${row.label ? `<div style="margin-top:5px;color:#98a2b3;font-size:12px">${escapeHtml(row.label)}</div>` : ""}</td>
+          <td>${escapeHtml(row.created)}</td>
+          <td class="never">${escapeHtml(row.used)}</td>
+          <td><div class="actions">
+            <button class="icon-button" type="button" data-copy="${escapeHtml(row.fullKey || row.key)}" aria-label="复制密钥" title="复制">${icons.copy}</button>
+            <button class="icon-button danger" type="button" data-delete="${row.id}" aria-label="删除密钥" title="删除">${icons.trash}</button>
+          </div></td>
+        </tr>`).join("") : `<tr><td colspan="4"><div class="empty"><strong>暂无服务密钥</strong><span>点击“创建密钥”生成第一个密钥。</span></div></td></tr>`;
+      foot.innerHTML = rows.length ? "" : `<button class="btn primary" type="button" id="emptyCreateButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>创建密钥</button>`;
+      document.querySelector("#emptyCreateButton")?.addEventListener("click", openCreate);
+    }
+
+    function showToast(message) {
+      const toast = document.querySelector("#toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    function openCreate() {
+      document.querySelector("#createTitle").textContent = "创建密钥";
+      document.querySelector("#createBody").innerHTML = '<label class="field-label" for="keyLabel">密钥备注（可选）</label><input id="keyLabel" type="text" maxlength="40" placeholder="例如：报表服务"><p class="helper">备注只用于在列表中识别密钥，不会影响权限。</p>';
+      document.querySelector("#createActions").innerHTML = '<button class="btn" type="button" data-close>取消</button><button class="btn primary" id="confirmCreate" type="button">创建密钥</button>';
+      document.querySelector("#confirmCreate").addEventListener("click", createKey);
+      document.querySelector("#createOverlay").classList.add("show");
+      setTimeout(() => document.querySelector("#keyLabel").focus(), 0);
+    }
+
+    function closeOverlays() {
+      document.querySelectorAll(".overlay").forEach((overlay) => overlay.classList.remove("show"));
+    }
+
+    function createKey() {
+      const label = document.querySelector("#keyLabel").value.trim();
+      const suffix = Math.random().toString(36).slice(2, 14);
+      const fullKey = `app_${Math.random().toString(36).slice(2, 12)}_${suffix}`;
+      rows.unshift({ id: Date.now(), key: `app...${fullKey.slice(-12)}`, fullKey, created: "2026-08-26 05:28", used: "从未", label });
+      closeOverlays();
+      renderRows();
+      const overlay = document.querySelector("#createOverlay");
+      document.querySelector("#createTitle").textContent = "密钥已创建";
+      document.querySelector("#createBody").innerHTML = `<div class="success-box"><strong>请立即复制并妥善保存完整密钥</strong><div class="secret-box"><code id="newSecret">${escapeHtml(fullKey)}</code><button class="copy-inline" id="copyNewSecret" type="button">复制</button></div><p class="warning">出于安全原因，关闭此窗口后将无法再次查看完整密钥。</p></div>`;
+      document.querySelector("#createActions").innerHTML = `<button class="btn primary" type="button" data-close>我已复制，关闭</button>`;
+      overlay.classList.add("show");
+      document.querySelector("#copyNewSecret").addEventListener("click", () => copyValue(fullKey));
+    }
+
+    async function copyValue(value) {
+      try { await navigator.clipboard.writeText(value); }
+      catch (_) { const input = document.createElement("textarea"); input.value = value; document.body.appendChild(input); input.select(); document.execCommand("copy"); input.remove(); }
+      showToast("密钥已复制");
+    }
+
+    document.querySelector("#createKeyButton").addEventListener("click", openCreate);
+    document.querySelector("#confirmCreate").addEventListener("click", createKey);
+    document.querySelector("#keyRows").addEventListener("click", (event) => {
+      const copyButton = event.target.closest("[data-copy]");
+      if (copyButton) return copyValue(copyButton.dataset.copy);
+      const deleteButton = event.target.closest("[data-delete]");
+      if (deleteButton) { deletingId = Number(deleteButton.dataset.delete); document.querySelector("#deleteOverlay").classList.add("show"); }
+    });
+    document.querySelector("#confirmDelete").addEventListener("click", () => {
+      const index = rows.findIndex((row) => row.id === deletingId);
+      if (index >= 0) rows.splice(index, 1);
+      deletingId = null;
+      closeOverlays();
+      renderRows();
+      showToast("密钥已删除");
+    });
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) closeOverlays();
+      if (event.target.classList.contains("overlay")) closeOverlays();
+    });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeOverlays(); });
+    renderRows();
+  </script>
+</body>
+</html>

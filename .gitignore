@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+*.bak
+*.tmp
+.DS_Store
+coverage/
+tmp/
+state/
+dist/
+/release-manifest.json
+
+# Local deployment and backup artifacts
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.sql
+*.sql.gz
+backups/

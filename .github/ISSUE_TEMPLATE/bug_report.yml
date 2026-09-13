@@ -1,0 +1,38 @@
+name: Bug report
+description: 报告可以稳定复现的问题
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 请勿提交令牌、密码、真实数据库地址、客户数据或未修复漏洞。
+  - type: input
+    id: version
+    attributes:
+      label: Cube Console 版本
+      placeholder: v1.0.0 或 Commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 操作系统、Docker、Compose、Cube Core 和数据库类型；请脱敏。

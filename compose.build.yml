@@ -1,0 +1,16 @@
+services:
+  cube_console:
+    build:
+      context: .
+      args:
+        BUILD_REVISION: ${BUILD_REVISION:-development}
+        BUILD_CREATED: ${BUILD_CREATED:-unknown}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        APK_REPOSITORY: ${APK_REPOSITORY:-https://mirrors.aliyun.com/alpine}
+
+  cube_gateway:
+    build:
+      context: ./services/gateway
+      args:
+        BUILD_REVISION: ${BUILD_REVISION:-development}
+        BUILD_CREATED: ${BUILD_CREATED:-unknown}

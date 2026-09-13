@@ -1,0 +1,27 @@
+name: nginx-ui
+
+services:
+  nginx-ui:
+    # Keep the digest pinned so a later migration uses the same Nginx-UI build.
+    # Update the digest deliberately when upgrading Nginx-UI.
+    image: uozi/nginx-ui:latest@sha256:fc958416dc387d115ef50ad1eb4db7d7252a21d4243ce476d5aa6995956f9f1c
+    container_name: nginx-ui
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      NGINX_UI_SERVER_RUN_MODE: release
+      NGINX_UI_SERVER_PORT: "9000"
+      # The host Nginx configuration and logs are exposed at their native paths
+      # so Nginx-UI can index the same files that the host service uses.
+      NGINX_UI_NGINX_CONFIG_DIR: /etc/nginx
+      NGINX_UI_NGINX_ACCESS_LOG_PATH: /var/log/nginx/access.log
+      NGINX_UI_NGINX_ERROR_LOG_PATH: /var/log/nginx/error.log
+      NGINX_UI_NGINX_LOG_DIR_WHITE_LIST: /var/log/nginx
+    ports:
+      # Deliberately localhost-only. Publish through the host Nginx later if needed.
+      - "127.0.0.1:${NGINX_UI_PORT:-19000}:9000"
+    volumes:
+      - ./data:/etc/nginx-ui
+      - /etc/nginx:/etc/nginx:rw
+      - /var/log/nginx:/var/log/nginx:rw
+      - /var/run/docker.sock:/var/run/docker.sock

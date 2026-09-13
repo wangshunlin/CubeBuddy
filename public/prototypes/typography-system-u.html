@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cube Console · 统一字体视觉方案 U（修订版）</title>
+  <style>
+    :root {
+      --font-sans: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono: "SFMono-Regular", Consolas, ui-monospace, monospace;
+      --text-strong: #17232f;
+      --text-primary: #3f4c57;
+      --text-secondary: #586571;
+      --text-muted: #73808c;
+      --text-hint: #8d98a1;
+      --border: #dfe4e8;
+      --line: #edf0f2;
+      --bg: #f4f6f8;
+      --panel: #fff;
+      --teal: #0c8f87;
+      --teal-soft: #e7f5f3;
+      --green: #1b936e;
+      --green-soft: #e8f6f0;
+      --orange: #ae6734;
+      --orange-soft: #fff3e9;
+      --shadow: 0 5px 18px rgba(18, 42, 61, .08);
+      --radius-control: 7px;
+      --radius-card: 8px;
+      --radius-panel: 10px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      color: var(--text-strong);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .shell { min-height: 100vh; }
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 224px;
+      padding: 20px 12px;
+      color: #c7d2d8;
+      background: #122a3d;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; }
+    .brand-mark {
+      width: 30px; height: 30px; display: grid; place-items: center;
+      border-radius: 8px; color: #fff; background: #2da49c; font-weight: 700;
+    }
+    .brand strong { color: #fff; font-size: 16px; font-weight: 700; }
+    .nav { display: grid; gap: 4px; }
+    .nav a {
+      padding: 11px 12px; border-radius: 7px; color: #adbdc7;
+      text-decoration: none; font-size: 14px;
+    }
+    .nav a.active, .nav a:hover { color: #fff; background: rgba(45, 164, 156, .2); }
+
+    .main { margin-left: 224px; min-width: 0; }
+    .topbar {
+      height: 62px; padding: 0 28px; display: flex; align-items: center;
+      justify-content: space-between; border-bottom: 1px solid var(--border); background: #fff;
+    }
+    .breadcrumb { color: var(--text-muted); font-size: 12px; }
+    .breadcrumb strong { color: var(--text-primary); font-weight: 600; }
+    .page { max-width: 1320px; margin: 0 auto; padding: 28px; }
+    .page-head { margin-bottom: 24px; display: flex; align-items: end; justify-content: space-between; gap: 24px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 6px; font-size: 24px; line-height: 1.25; letter-spacing: -.2px; }
+    .page-head p { margin: 0; color: var(--text-muted); font-size: 12px; }
+    .section-title { margin: 0 0 16px; font-size: 16px; line-height: 1.35; }
+    .section-title small { margin-left: 8px; color: var(--text-hint); font-size: 12px; font-weight: 400; }
+
+    .grid { display: grid; gap: 16px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card);
+      background: var(--panel); box-shadow: var(--shadow);
+    }
+    .card-head { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); }
+    .card-head h2 { margin: 0; font-size: 16px; line-height: 1.35; }
+    .card-head p { margin: 4px 0 0; color: var(--text-muted); font-size: 12px; }
+    .card-body { padding: 20px; }
+    .helper { color: var(--text-hint); font-size: 12px; line-height: 1.45; }
+
+    .field { display: block; margin-bottom: 20px; color: var(--text-secondary); font-size: 14px; font-weight: 600; }
+    .field:last-child { margin-bottom: 0; }
+    .field-label { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+    .field input, .field select, .field textarea {
+      display: block; width: 100%; margin-top: 8px; padding: 0 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-control);
+      color: var(--text-primary); background: #fff; font-size: 14px; outline: 0;
+    }
+    .field input, .field select { height: 42px; }
+    .field textarea { min-height: 96px; padding-top: 10px; padding-bottom: 10px; line-height: 1.5; resize: vertical; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: #2da49c; box-shadow: 0 0 0 3px rgba(45, 164, 156, .12);
+    }
+    .field input[readonly] { color: #7d8994; border-color: #e1e6eb; background: #f6f8fa; cursor: default; }
+    .field small { display: block; margin-top: 6px; color: var(--text-hint); font-size: 12px; font-weight: 400; line-height: 1.45; }
+
+    .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .btn { height: 38px; padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text-primary); background: #fff; font-size: 14px; font-weight: 600; }
+    .btn.primary { color: #fff; border-color: var(--teal); background: var(--teal); }
+    .btn:hover { border-color: #aab8c1; background: #fafbfb; }
+    .btn.primary:hover { background: #087b74; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 999px; color: var(--green); background: var(--green-soft); font-size: 12px; font-weight: 600; }
+    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge.orange { color: var(--orange); background: var(--orange-soft); }
+
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { height: 52px; padding: 12px 16px; border-bottom: 1px solid var(--line); text-align: left; font-size: 14px; vertical-align: middle; }
+    th { height: 42px; color: var(--text-muted); background: #f8f9fa; font-size: 12px; font-weight: 600; }
+    tr:last-child td { border-bottom: 0; }
+    td strong { font-weight: 600; }
+    td small { display: block; margin-top: 4px; color: var(--text-hint); font-size: 12px; line-height: 1.45; }
+    .mono { color: var(--text-primary); font: 12px/1.6 var(--font-mono); }
+
+    .scale { display: grid; gap: 0; }
+    .scale-row { display: grid; grid-template-columns: 100px 1fr 160px; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .scale-row:last-child { border-bottom: 0; }
+    .scale-name, .scale-size { color: var(--text-muted); font-size: 12px; }
+    .scale-size { text-align: right; font-family: var(--font-mono); }
+    .sample-display { font-size: 24px; line-height: 1.25; font-weight: 700; }
+    .sample-title { font-size: 20px; line-height: 1.25; font-weight: 700; }
+    .sample-section { font-size: 16px; line-height: 1.35; font-weight: 600; }
+    .sample-body { font-size: 14px; }
+    .sample-control { font-size: 14px; font-weight: 600; }
+    .sample-meta { font-size: 12px; }
+    .sample-caption { color: var(--text-hint); font-size: 12px; }
+
+    @media (max-width: 900px) {
+      .sidebar { width: 68px; padding: 20px 8px; }
+      .brand { justify-content: center; padding: 0 0 24px; }
+      .brand strong, .nav a span { display: none; }
+      .nav a { text-align: center; font-size: 0; }
+      .nav a::first-letter { font-size: 18px; }
+      .main { margin-left: 68px; }
+      .grid.two { grid-template-columns: 1fr; }
+      .page { padding: 20px 16px; }
+    }
+    @media (max-width: 600px) {
+      .topbar { padding: 0 16px; }
+      .page-head { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .scale-row { grid-template-columns: 1fr auto; gap: 8px; }
+      .scale-row > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+      .scale-size { grid-column: 2; grid-row: 1; }
+    }
+  </style>
+  <link rel="stylesheet" href="../styles/typography.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">C</span><strong>CubeBuddy</strong></div>
+      <nav class="nav">
+        <a href="#"><span>⌁</span> 数据源</a>
+        <a href="#" class="active"><span>◇</span> 语义模型</a>
+        <a href="#"><span>◎</span> 业务术语</a>
+        <a href="#"><span>↥</span> 集成中心</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="breadcrumb">配置台 <span>／</span> <strong>统一字体视觉方案 U（修订版）</strong></div>
+        <span class="badge">预览模式</span>
+      </header>
+
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <h1>统一字体视觉方案 U（修订版）</h1>
+            <p>本版只保留界面文字层级：正文与表单控件 14px，次要信息与提示文字 12px。</p>
+          </div>
+          <div class="buttons"><button class="btn">次要操作</button><button class="btn primary">主要操作</button></div>
+        </div>
+
+        <div class="grid two">
+          <section class="card">
+            <div class="card-head"><div><h2>模型基础信息</h2><p>表单控件、只读字段与辅助说明</p></div><span class="badge">健康</span></div>
+            <div class="card-body">
+              <label class="field"><span class="field-label">模型标识 <span aria-label="系统字段">🔒</span></span><input value="dim_off_f_sjzymlsj_ai_info" readonly><small>由系统管理，不可直接修改</small></label>
+              <label class="field"><span class="field-label">业务标题</span><input value="示例数据目录" placeholder="请输入业务标题"><small>业务标题可编辑，用于页面展示</small></label>
+              <label class="field"><span class="field-label">业务描述</span><textarea placeholder="请输入业务描述">用于展示模型的业务含义、适用范围和维护说明。</textarea></label>
+              <div class="buttons"><button class="btn">取消</button><button class="btn primary">保存配置</button></div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><div><h2>字号层级</h2><p>界面文字统一使用 24 / 20 / 16 / 14 / 12px</p></div></div>
+            <div class="card-body scale">
+              <div class="scale-row"><span class="scale-name">页面标题</span><span class="sample-display">语义模型</span><span class="scale-size">24px / 700</span></div>
+              <div class="scale-row"><span class="scale-name">弹窗标题</span><span class="sample-title">编辑维度展示信息</span><span class="scale-size">20px / 700</span></div>
+              <div class="scale-row"><span class="scale-name">区块标题</span><span class="sample-section">物理表与字段</span><span class="scale-size">16px / 600</span></div>
+              <div class="scale-row"><span class="scale-name">正文 / 控件</span><span class="sample-body">选择数据源后查看对应的物理表。<strong class="sample-control">数据源名称</strong></span><span class="scale-size">14px / 400–600</span></div>
+              <div class="scale-row"><span class="scale-name">次要 / 提示</span><span class="sample-meta">创建时间 · 最后使用 · 由系统管理，不可直接修改</span><span class="scale-size">12px / 400</span></div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><div><h2>数据源列表</h2><p>表头、正文、辅助信息与状态标签</p></div><button class="btn primary">＋ 添加数据源</button></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>数据源</th><th>类型</th><th>连接地址</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>analytics</strong><small>业务数据源</small></td><td>MySQL</td><td class="mono">192.0.2.10:3306</td><td><span class="badge">健康</span></td><td><button class="btn">编辑</button></td></tr>
+                  <tr><td><strong>sample_db</strong><small>业务数据源</small></td><td>MySQL</td><td class="mono">192.0.2.20:3306</td><td><span class="badge orange">待检查</span></td><td><button class="btn">测试</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

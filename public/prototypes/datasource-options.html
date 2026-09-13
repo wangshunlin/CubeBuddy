@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>数据源展示方案 v2</title>
+  <style>
+    :root{--p-ink:#17232f;--p-text:#34414d;--p-muted:#73808c;--p-line:#dce5e7;--p-soft:#f4f8f8;--p-teal:#0c9189;--p-teal-dark:#087a73;--p-teal-soft:#e5f5f2;--p-bg:#eef3f4}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,"SF Pro Display","PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--p-ink);background:var(--p-bg)}button,input{font:inherit}button{cursor:pointer}
+    .p-shell{max-width:1120px;margin:0 auto;padding:30px 24px 44px}.p-head{margin-bottom:22px}.p-head h1{margin:0;font-size:26px;letter-spacing:-.6px}.p-head p{margin:7px 0 0;color:var(--p-muted);font-size:13px}
+    .p-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.p-card{min-width:0;border:1px solid var(--p-line);border-radius:12px;background:#fff;box-shadow:0 8px 22px rgba(18,42,61,.055);overflow:hidden}.p-card-head{padding:16px 18px 14px;border-bottom:1px solid #edf1f2}.p-card-head h2{margin:0;font-size:16px}.p-card-head p{margin:6px 0 0;color:var(--p-muted);font-size:12px}.p-tag{float:right;padding:3px 7px;border-radius:999px;color:var(--p-teal-dark);background:var(--p-teal-soft);font-size:10px;font-weight:700}.p-preview{padding:14px;background:#f7f9fa}.p-modal{min-height:318px;border:1px solid #e2e8ea;border-radius:10px;background:#fff;box-shadow:0 5px 16px rgba(18,42,61,.07);overflow:hidden}.p-modal-head{padding:18px 20px;border-bottom:1px solid #edf1f2}.p-modal-head h3{margin:0;font-size:20px}.p-modal-body{padding:18px 20px 20px}.p-label{display:block;margin-bottom:10px;font-size:15px;font-weight:700}.p-footer{display:flex;justify-content:flex-end;gap:14px;padding:13px 20px;border-top:1px solid #edf1f2}.p-btn{height:36px;padding:0 17px;border:1px solid #d5e0e3;border-radius:8px;color:var(--p-text);background:#fff;font-size:12px;font-weight:700}.p-btn.primary{border-color:var(--p-teal);color:#fff;background:var(--p-teal)}
+    .p-simple-menu{padding:8px 0;border-radius:10px;background:#f4f7f8}.p-simple-option{width:calc(100% - 12px);min-height:56px;margin:0 6px;padding:0 28px;display:flex;align-items:center;border:0;border-radius:10px;color:#65717b;background:transparent;text-align:left;font-size:17px;transition:.15s ease}.p-simple-option+.p-simple-option{margin-top:3px}.p-simple-option:hover{color:var(--p-text);background:#e9f0f1}.p-simple-option.selected{color:#fff;background:#287cf2;box-shadow:0 3px 8px rgba(40,124,242,.18)}
+    .p-radio-list{border:1px solid var(--p-line);border-radius:10px;overflow:hidden}.p-radio-row{width:100%;min-height:58px;padding:0 13px;display:flex;align-items:center;gap:11px;border:0;border-bottom:1px solid #edf1f2;color:var(--p-text);background:#fff;text-align:left}.p-radio-row:last-child{border-bottom:0}.p-radio-row:hover{background:#f7fbfa}.p-radio{width:17px;height:17px;border:2px solid #b8c8cb;border-radius:50%;position:relative}.p-radio-row.selected .p-radio{border-color:var(--p-teal)}.p-radio-row.selected .p-radio:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--p-teal)}.p-radio-row strong{font-size:15px}.p-radio-row small{display:block;margin-top:4px;color:var(--p-muted);font-size:12px}
+    .p-two-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.p-mini-card{min-height:76px;padding:13px;border:1px solid var(--p-line);border-radius:9px;color:var(--p-text);background:#fbfcfc;text-align:left}.p-mini-card:hover{border-color:#a6cfca;background:#f6fcfb}.p-mini-card.selected{border:2px solid var(--p-teal);padding:12px;color:var(--p-teal-dark);background:#fff}.p-mini-card strong{display:block;overflow:hidden;font-size:15px;text-overflow:ellipsis;white-space:nowrap}.p-mini-card small{display:block;margin-top:7px;color:var(--p-muted);font-size:11px}.p-mini-card.selected small{color:#62837f}
+    .p-select{border:1px solid #bfcfd1;border-radius:9px;overflow:hidden}.p-select-current{min-height:48px;padding:0 13px;display:flex;align-items:center;justify-content:space-between;color:var(--p-text);background:#fff;font-size:14px}.p-select-current span:last-child{color:var(--p-muted);font-size:17px}.p-select-menu{padding:6px;border-top:1px solid #edf1f2;background:#fbfcfc}.p-search{width:100%;height:32px;margin-bottom:5px;padding:0 9px;border:1px solid var(--p-line);border-radius:6px;color:var(--p-text);font-size:12px}.p-search:focus{border-color:var(--p-teal);outline:0;box-shadow:0 0 0 3px rgba(12,145,137,.1)}.p-select-row{width:100%;min-height:43px;padding:0 9px;display:flex;align-items:center;justify-content:space-between;border:0;border-radius:6px;color:var(--p-text);background:transparent;text-align:left}.p-select-row:hover,.p-select-row.selected{color:var(--p-teal-dark);background:var(--p-teal-soft)}.p-select-row small{display:block;margin-top:3px;color:var(--p-muted);font-size:11px}.p-select-row[hidden]{display:none}
+    .p-note{grid-column:1/-1;padding:12px 15px;border:1px dashed #bdd7d3;border-radius:9px;color:#416964;background:#f2faf8;font-size:12px}.p-note strong{color:var(--p-teal-dark)}
+    @media(max-width:760px){.p-shell{padding:22px 14px 34px}.p-grid{grid-template-columns:1fr}.p-note{grid-column:auto}}@media(max-width:480px){.p-preview{padding:10px}.p-modal-head,.p-modal-body{padding-left:15px;padding-right:15px}.p-footer{padding-left:15px;padding-right:15px}.p-two-col{grid-template-columns:1fr}}
+  </style>
+  <link rel="stylesheet" href="../styles/typography.css">
+</head>
+<body>
+  <main class="p-shell" id="datasource-options-v2">
+    <header class="p-head"><h1>自动建模 · 数据源选择</h1><p>4 个更简洁的展示方案，点击可查看选中态</p></header>
+    <section class="p-grid" aria-label="数据源展示方案">
+      <article class="p-card">
+        <header class="p-card-head"><span class="p-tag">推荐</span><h2>方案一 · 极简菜单</h2><p>只保留数据源名称，选中项整行高亮。</p></header>
+        <div class="p-preview"><div class="p-modal"><div class="p-modal-head"><h3>自动建模</h3></div><div class="p-modal-body"><span class="p-label">数据源</span><div class="p-simple-menu" data-simple-group><button class="p-simple-option selected" type="button" data-simple-option>sample_db</button><button class="p-simple-option" type="button" data-simple-option>analytics_db</button></div></div><div class="p-footer"><button class="p-btn">取消</button><button class="p-btn primary">生成模型</button></div></div></div>
+      </article>
+
+      <article class="p-card">
+        <header class="p-card-head"><span class="p-tag">更轻</span><h2>方案二 · 单选列表</h2><p>去掉外层卡片，利用分隔线组织内容。</p></header>
+        <div class="p-preview"><div class="p-modal"><div class="p-modal-head"><h3>自动建模</h3></div><div class="p-modal-body"><span class="p-label">数据源</span><div class="p-radio-list" data-radio-group><button class="p-radio-row selected" type="button" data-radio-option><i class="p-radio"></i><span><strong>sample_db</strong><small>MySQL · sample_db</small></span></button><button class="p-radio-row" type="button" data-radio-option><i class="p-radio"></i><span><strong>analytics_db</strong><small>MySQL · analytics_db</small></span></button></div></div><div class="p-footer"><button class="p-btn">取消</button><button class="p-btn primary">生成模型</button></div></div></div>
+      </article>
+
+      <article class="p-card">
+        <header class="p-card-head"><span class="p-tag">省空间</span><h2>方案三 · 双列小卡片</h2><p>数据源较少时，一屏展示更多选项。</p></header>
+        <div class="p-preview"><div class="p-modal"><div class="p-modal-head"><h3>自动建模</h3></div><div class="p-modal-body"><span class="p-label">数据源</span><div class="p-two-col" data-mini-group><button class="p-mini-card selected" type="button" data-mini-option><strong>sample_db</strong><small>MySQL · sample_db</small></button><button class="p-mini-card" type="button" data-mini-option><strong>analytics_db</strong><small>MySQL · analytics_db</small></button><button class="p-mini-card" type="button" data-mini-option><strong>mysql_ods</strong><small>MySQL · ecommerce</small></button><button class="p-mini-card" type="button" data-mini-option><strong>dw</strong><small>ClickHouse · dw</small></button></div></div><div class="p-footer"><button class="p-btn">取消</button><button class="p-btn primary">生成模型</button></div></div></div>
+      </article>
+
+      <article class="p-card">
+        <header class="p-card-head"><span class="p-tag">数据源较多</span><h2>方案四 · 紧凑下拉</h2><p>默认只显示当前项，适合后续扩展。</p></header>
+        <div class="p-preview"><div class="p-modal"><div class="p-modal-head"><h3>自动建模</h3></div><div class="p-modal-body"><span class="p-label">数据源</span><div class="p-select"><div class="p-select-current"><span data-current-value>sample_db · MySQL</span><span>⌄</span></div><div class="p-select-menu"><input class="p-search" type="search" placeholder="搜索数据源" aria-label="搜索数据源"><button class="p-select-row selected" type="button" data-select-option data-value="sample_db · MySQL"><span><b>sample_db</b><small>MySQL · sample_db</small></span><span>✓</span></button><button class="p-select-row" type="button" data-select-option data-value="analytics_db · MySQL"><span><b>analytics_db</b><small>MySQL · analytics_db</small></span><span></span></button><button class="p-select-row" type="button" data-select-option data-value="mysql_ods · MySQL"><span><b>mysql_ods</b><small>MySQL · ecommerce</small></span><span></span></button></div></div></div><div class="p-footer"><button class="p-btn">取消</button><button class="p-btn primary">生成模型</button></div></div></div>
+      </article>
+
+      <div class="p-note"><strong>共同方向：</strong>名称保持突出，副信息降级为一行；不再展示连接状态、模型数量等额外信息。若你认可方案一，我下一步可以直接把它落到实际自动建模弹窗。</div>
+    </section>
+  </main>
+  <script>
+    const root = document.getElementById("datasource-options-v2");
+    function bindSingleChoice(selector, activeClass, markSelector = null) {
+      root.querySelectorAll(selector).forEach((group) => group.addEventListener("click", (event) => {
+        const option = event.target.closest("button");
+        if (!option) return;
+        group.querySelectorAll("button").forEach((item) => item.classList.toggle(activeClass, item === option));
+        if (markSelector) group.querySelectorAll(markSelector).forEach((mark) => { mark.textContent = mark.closest("button")?.classList.contains(activeClass) ? "✓" : ""; });
+      }));
+    }
+    bindSingleChoice("[data-simple-group]", "selected");
+    bindSingleChoice("[data-radio-group]", "selected");
+    bindSingleChoice("[data-mini-group]", "selected");
+    const currentValue = root.querySelector("[data-current-value]");
+    const search = root.querySelector(".p-search");
+    root.querySelectorAll("[data-select-option]").forEach((option) => option.addEventListener("click", () => {
+      root.querySelectorAll("[data-select-option]").forEach((item) => { item.classList.toggle("selected", item === option); item.lastElementChild.textContent = item === option ? "✓" : ""; });
+      currentValue.textContent = option.dataset.value;
+    }));
+    search?.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      root.querySelectorAll("[data-select-option]").forEach((option) => { option.hidden = !option.textContent.toLowerCase().includes(query); });
+    });
+  </script>
+</body>
+</html>

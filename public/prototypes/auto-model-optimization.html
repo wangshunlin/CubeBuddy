@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>自动建模弹窗 · 优化方案</title>
+  <style>
+    :root {
+      --am-nav: #122a3d;
+      --am-nav-deep: #0e2232;
+      --am-teal: #0c9188;
+      --am-teal-dark: #087b74;
+      --am-teal-soft: #e8f6f3;
+      --am-ink: #17232f;
+      --am-text: #475663;
+      --am-muted: #7b8993;
+      --am-line: #dfe7e9;
+      --am-line-soft: #edf1f2;
+      --am-bg: #f3f7f8;
+      --am-white: #fff;
+      --am-green: #168661;
+      --am-green-soft: #eaf7f1;
+      --am-orange: #b76c35;
+      --am-orange-soft: #fff6ed;
+      --am-red: #b9534b;
+      --am-red-soft: #fff0ef;
+      --am-shadow: 0 28px 72px rgba(8, 25, 37, .24);
+      --am-radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      color: var(--am-ink);
+      background: var(--am-bg);
+      font-family: Inter, "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(12, 145, 136, .2);
+      outline-offset: 2px;
+    }
+    .am-page { min-height: 100vh; }
+    .am-sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 1;
+      width: 224px;
+      display: flex;
+      flex-direction: column;
+      color: #b7c8d0;
+      background: linear-gradient(180deg, var(--am-nav), var(--am-nav-deep));
+    }
+    .am-brand {
+      height: 72px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      border-bottom: 1px solid rgba(255, 255, 255, .08);
+    }
+    .am-brand-mark {
+      width: 31px;
+      height: 31px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      color: #fff;
+      background: linear-gradient(145deg, #0ba094, #57c9be);
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .am-brand strong, .am-brand small { display: block; }
+    .am-brand strong { color: #fff; font-size: 15px; }
+    .am-brand small { margin-top: 3px; color: #8198a6; font-size: 9px; letter-spacing: .9px; }
+    .am-nav { padding: 18px 11px; }
+    .am-nav-label { margin: 0 12px 8px; color: #718995; font-size: 10px; letter-spacing: 1px; }
+    .am-nav-item {
+      width: 100%;
+      height: 42px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 0;
+      border-radius: 7px;
+      color: #aec0c8;
+      background: transparent;
+      text-align: left;
+      font-size: 13px;
+    }
+    .am-nav-item.active { color: #fff; background: linear-gradient(90deg, rgba(19, 160, 147, .27), rgba(19, 160, 147, .08)); }
+    .am-nav-item span:first-child { width: 20px; color: #7f99a6; text-align: center; font-size: 16px; }
+    .am-nav-item.active span:first-child { color: #58cfc5; }
+    .am-nav-item em { margin-left: auto; color: #70d1c7; font-size: 10px; font-style: normal; }
+    .am-sidebar-foot { margin-top: auto; padding: 16px; border-top: 1px solid rgba(255,255,255,.08); color: #b9cad1; font-size: 11px; }
+    .am-health { display: flex; align-items: center; gap: 8px; }
+    .am-health i { width: 8px; height: 8px; border-radius: 50%; background: #37c08f; box-shadow: 0 0 0 3px rgba(55, 192, 143, .13); }
+    .am-health small { display: block; margin-top: 4px; color: #758e9b; font-size: 10px; }
+    .am-main { min-height: 100vh; margin-left: 224px; }
+    .am-topbar { height: 62px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--am-line); background: #fff; }
+    .am-crumb { color: var(--am-muted); font-size: 12px; }
+    .am-crumb b { margin: 0 8px; color: #bdc8cc; font-weight: 400; }
+    .am-crumb strong { color: var(--am-text); }
+    .am-top-actions { display: flex; align-items: center; gap: 10px; }
+    .am-top-search { width: 230px; height: 34px; padding: 0 11px; display: flex; align-items: center; border: 1px solid var(--am-line); border-radius: 7px; color: #9aa6ae; background: #f8fafb; font-size: 11px; }
+    .am-env { height: 34px; padding: 0 11px; border: 1px solid var(--am-line); border-radius: 7px; color: var(--am-text); background: #fff; font-size: 11px; }
+    .am-env i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #2ab486; }
+    .am-content { padding: 30px 32px; }
+    .am-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+    .am-page-head h1 { margin: 0 0 7px; font-size: 25px; letter-spacing: -.4px; }
+    .am-page-head p { margin: 0; color: var(--am-muted); font-size: 13px; }
+    .am-button { height: 36px; padding: 0 14px; border: 1px solid var(--am-line); border-radius: 7px; color: var(--am-text); background: #fff; font-size: 12px; font-weight: 700; }
+    .am-button.primary { border-color: var(--am-teal); color: #fff; background: var(--am-teal); }
+    .am-button.primary:hover { border-color: var(--am-teal-dark); background: var(--am-teal-dark); }
+    .am-button:hover { border-color: #9dcac6; color: var(--am-teal-dark); }
+    .am-button:disabled { opacity: .5; cursor: not-allowed; }
+    .am-skeleton-card { height: 210px; margin-top: 24px; border: 1px solid var(--am-line); border-radius: var(--am-radius); background: #fff; box-shadow: 0 8px 24px rgba(17, 42, 61, .04); }
+    .am-skeleton-head { height: 62px; padding: 0 20px; display: flex; align-items: center; border-bottom: 1px solid var(--am-line-soft); color: var(--am-text); font-size: 14px; font-weight: 700; }
+    .am-skeleton-row { height: 49px; padding: 0 20px; display: grid; grid-template-columns: 1.2fr .7fr 1fr; align-items: center; border-bottom: 1px solid var(--am-line-soft); color: #8d99a1; font-size: 12px; }
+
+    .am-overlay { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 22px; background: rgba(8, 25, 37, .53); backdrop-filter: blur(3px); }
+    .am-modal { width: min(1080px, calc(100vw - 44px)); height: min(760px, calc(100vh - 44px)); display: flex; flex-direction: column; overflow: hidden; border-radius: 15px; background: #fff; box-shadow: var(--am-shadow); }
+    .am-modal.am-is-success { height: min(520px, calc(100vh - 44px)); }
+    .am-modal-head { flex: 0 0 auto; padding: 22px 28px 17px; border-bottom: 1px solid var(--am-line-soft); }
+    .am-modal-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+    .am-modal-title-block { display: flex; align-items: flex-start; gap: 13px; }
+    .am-modal-icon { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 11px; color: var(--am-teal-dark); background: var(--am-teal-soft); font-size: 18px; font-weight: 800; }
+    .am-modal h2 { margin: 1px 0 5px; font-size: 21px; letter-spacing: -.3px; }
+    .am-modal-sub { margin: 0; color: var(--am-muted); font-size: 12px; line-height: 1.5; }
+    .am-close { width: 32px; height: 32px; margin-top: -4px; border: 0; border-radius: 7px; color: #82919a; background: transparent; font-size: 24px; line-height: 1; }
+    .am-close:hover { color: var(--am-text); background: #f2f5f6; }
+    .am-steps { margin-top: 19px; display: flex; align-items: center; gap: 0; }
+    .am-step { display: flex; align-items: center; gap: 8px; color: #97a4aa; font-size: 11px; white-space: nowrap; }
+    .am-step i { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid #ccd7da; border-radius: 50%; color: #82929a; background: #fff; font-size: 11px; font-style: normal; font-weight: 700; }
+    .am-step.active { color: var(--am-teal-dark); font-weight: 700; }
+    .am-step.active i { border-color: var(--am-teal); color: #fff; background: var(--am-teal); }
+    .am-step.done { color: var(--am-green); }
+    .am-step.done i { border-color: #a9d9ca; color: var(--am-green); background: var(--am-green-soft); }
+    .am-step-line { width: 54px; height: 1px; margin: 0 11px; background: #dce5e7; }
+    .am-step-line.done { background: #b3dcd4; }
+
+    .am-modal-body { min-height: 0; flex: 1; padding: 20px 28px 16px; overflow: hidden; }
+    .am-select-layout { height: 100%; min-height: 0; display: grid; grid-template-columns: 252px minmax(0, 1fr); gap: 23px; }
+    .am-source-pane { min-height: 0; display: flex; flex-direction: column; padding-right: 22px; border-right: 1px solid var(--am-line-soft); }
+    .am-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .am-section-heading h3 { margin: 0; font-size: 14px; }
+    .am-section-heading span { color: var(--am-muted); font-size: 11px; }
+    .am-source-help { margin: 6px 0 14px; color: var(--am-muted); font-size: 11px; line-height: 1.5; }
+    .am-source-list { min-height: 0; overflow: auto; }
+    .am-source-card { position: relative; width: 100%; min-height: 68px; margin-bottom: 8px; padding: 11px 12px; display: flex; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 9px; color: var(--am-text); background: #f7f9fa; text-align: left; transition: .16s ease; }
+    .am-source-card:hover { border-color: #cfe3e0; background: #f2f9f7; }
+    .am-source-card.active { border-color: #b9deda; background: #f1faf8; box-shadow: 0 2px 6px rgba(12, 145, 136, .08); }
+    .am-source-card.active::before { content: ""; position: absolute; left: -1px; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--am-teal); }
+    .am-source-icon { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 8px; color: var(--am-teal-dark); background: #dff2ef; font-size: 11px; font-weight: 800; }
+    .am-source-copy { min-width: 0; flex: 1; }
+    .am-source-copy strong, .am-source-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .am-source-copy strong { color: var(--am-ink); font-size: 12px; }
+    .am-source-copy small { margin-top: 4px; color: var(--am-muted); font-size: 10px; }
+    .am-source-state { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #2ab486; box-shadow: 0 0 0 3px rgba(42, 180, 134, .1); }
+    .am-source-foot { margin-top: auto; padding-top: 14px; color: var(--am-muted); font-size: 10px; line-height: 1.6; }
+    .am-source-foot button { margin-top: 8px; padding: 0; border: 0; color: var(--am-teal-dark); background: transparent; font-size: 11px; font-weight: 700; }
+    .am-table-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .am-table-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .am-table-top h3 { margin: 0; font-size: 14px; }
+    .am-table-top p { margin: 6px 0 0; color: var(--am-muted); font-size: 11px; }
+    .am-count { padding: 5px 9px; border: 1px solid #cde7e2; border-radius: 999px; color: var(--am-teal-dark); background: #f1faf8; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .am-table-toolbar { margin: 14px 0 9px; display: flex; align-items: center; gap: 9px; }
+    .am-search { min-width: 0; height: 38px; flex: 1; padding: 0 11px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--am-line); border-radius: 7px; color: #8d9aa2; background: #fff; }
+    .am-search:focus-within { border-color: #9ecfc9; box-shadow: 0 0 0 3px rgba(12, 145, 136, .08); }
+    .am-search span { font-size: 18px; transform: rotate(-20deg); }
+    .am-search input { width: 100%; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; color: var(--am-text); background: transparent; font-size: 12px; }
+    .am-search input::placeholder { color: #9aa6ae; }
+    .am-clear { display: none; padding: 0 2px; border: 0; color: #91a0a7; background: transparent; font-size: 17px; }
+    .am-clear.visible { display: inline-block; }
+    .am-filter-group { display: flex; padding: 3px; border-radius: 7px; background: #f0f4f5; }
+    .am-filter { height: 30px; padding: 0 10px; border: 0; border-radius: 5px; color: var(--am-muted); background: transparent; font-size: 11px; }
+    .am-filter.active { color: var(--am-teal-dark); background: #fff; box-shadow: 0 1px 4px rgba(20, 50, 61, .07); font-weight: 700; }
+    .am-table-box { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--am-line); border-radius: 9px; }
+    .am-table-head, .am-table-row { display: grid; grid-template-columns: 28px minmax(180px, 1.05fr) minmax(135px, .9fr) 72px 66px; gap: 10px; align-items: center; }
+    .am-table-head { min-height: 41px; padding: 0 13px; border-bottom: 1px solid var(--am-line); color: var(--am-text); background: #f5f8f8; font-size: 11px; font-weight: 700; }
+    .am-table-head label { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; justify-self: center; cursor: pointer; }
+    .am-table-scroll { min-height: 0; flex: 1; overflow: auto; }
+    .am-table-row { min-height: 50px; padding: 0 13px; border-bottom: 1px solid var(--am-line-soft); cursor: pointer; font-size: 12px; }
+    .am-table-row:last-child { border-bottom: 0; }
+    .am-table-row:hover { background: #f7fbfa; }
+    .am-table-row.selected { background: #f0faf7; }
+    .am-table-row input, .am-table-head input { width: 16px; height: 16px; margin: 0; justify-self: center; accent-color: var(--am-teal); }
+    .am-table-name, .am-table-comment { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .am-table-name { color: var(--am-ink); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; font-weight: 700; }
+    .am-table-comment { color: #687984; }
+    .am-type { justify-self: start; padding: 3px 7px; border-radius: 999px; color: #66747d; background: #eff3f4; font-size: 10px; white-space: nowrap; }
+    .am-type.business { color: #357f70; background: #e7f5f1; }
+    .am-row-count { color: #87949d; font-size: 11px; text-align: right; white-space: nowrap; }
+    .am-table-empty { padding: 45px 12px; color: var(--am-muted); text-align: center; font-size: 12px; }
+    .am-table-empty strong { display: block; margin-bottom: 5px; color: var(--am-text); font-size: 13px; }
+    .am-table-note { margin-top: 9px; display: flex; align-items: center; gap: 7px; color: var(--am-muted); font-size: 10px; }
+    .am-table-note i { width: 15px; height: 15px; display: grid; place-items: center; border-radius: 50%; color: var(--am-teal-dark); background: var(--am-teal-soft); font-size: 10px; font-style: normal; font-weight: 800; }
+
+    .am-modal-foot { flex: 0 0 auto; min-height: 66px; padding: 12px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--am-line-soft); }
+    .am-foot-status { color: var(--am-muted); font-size: 11px; }
+    .am-foot-status strong { color: var(--am-text); }
+    .am-foot-actions { display: flex; align-items: center; gap: 9px; }
+    .am-progress { display: none; align-items: center; gap: 9px; color: var(--am-teal-dark); font-size: 11px; }
+    .am-progress.show { display: flex; }
+    .am-spinner { width: 14px; height: 14px; border: 2px solid #c4e3df; border-top-color: var(--am-teal); border-radius: 50%; animation: am-spin .7s linear infinite; }
+    @keyframes am-spin { to { transform: rotate(360deg); } }
+    .am-success-view { min-height: 0; flex: 1; display: flex; align-items: center; justify-content: center; padding: 32px; }
+    .am-success-card { width: min(620px, 100%); text-align: center; }
+    .am-success-icon { width: 54px; height: 54px; margin: 0 auto 15px; display: grid; place-items: center; border-radius: 50%; color: var(--am-green); background: var(--am-green-soft); font-size: 25px; font-weight: 800; }
+    .am-success-card h3 { margin: 0; font-size: 19px; }
+    .am-success-card p { margin: 8px 0 22px; color: var(--am-muted); font-size: 12px; }
+    .am-result-grid { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--am-line); border-radius: 9px; background: #fbfcfc; }
+    .am-result-item { padding: 15px 10px; border-right: 1px solid var(--am-line-soft); }
+    .am-result-item:last-child { border-right: 0; }
+    .am-result-item strong, .am-result-item span { display: block; }
+    .am-result-item strong { color: var(--am-teal-dark); font-size: 20px; }
+    .am-result-item span { margin-top: 4px; color: var(--am-muted); font-size: 11px; }
+    .am-success-actions { margin-top: 24px; display: flex; justify-content: center; gap: 9px; }
+
+    @media (max-width: 820px) {
+      .am-sidebar { width: 64px; }
+      .am-brand { padding: 0 16px; }
+      .am-brand > span:last-child, .am-nav-label, .am-nav-item span:last-child, .am-nav-item em, .am-sidebar-foot { display: none; }
+      .am-nav-item { justify-content: center; padding: 0; }
+      .am-main { margin-left: 64px; }
+      .am-content { padding: 24px 20px; }
+      .am-topbar { padding: 0 20px; }
+      .am-top-search { width: 38px; overflow: hidden; }
+      .am-modal { width: calc(100vw - 24px); height: calc(100vh - 24px); }
+      .am-modal-head, .am-modal-body { padding-left: 20px; padding-right: 20px; }
+      .am-modal-foot { padding-left: 20px; padding-right: 20px; }
+      .am-select-layout { grid-template-columns: 210px minmax(0, 1fr); gap: 18px; }
+      .am-source-pane { padding-right: 17px; }
+      .am-table-head, .am-table-row { grid-template-columns: 25px minmax(150px, 1fr) minmax(110px, .9fr) 56px 56px; gap: 7px; }
+      .am-table-comment { font-size: 11px; }
+    }
+    @media (max-width: 620px) {
+      .am-sidebar { display: none; }
+      .am-main { margin-left: 0; }
+      .am-topbar { height: 54px; }
+      .am-top-search { display: none; }
+      .am-content { padding: 18px 14px; }
+      .am-page-head { align-items: flex-start; flex-direction: column; }
+      .am-page-head .am-button { display: none; }
+      .am-overlay { padding: 9px; }
+      .am-modal { width: calc(100vw - 18px); height: calc(100vh - 18px); border-radius: 12px; }
+      .am-modal-head { padding: 16px 16px 13px; }
+      .am-modal-title-block { gap: 10px; }
+      .am-modal-icon { width: 32px; height: 32px; border-radius: 9px; font-size: 15px; }
+      .am-modal h2 { margin-top: 0; font-size: 18px; }
+      .am-modal-sub { font-size: 11px; }
+      .am-steps { margin-top: 14px; overflow: auto; padding-bottom: 2px; }
+      .am-step { font-size: 10px; }
+      .am-step-line { width: 24px; margin: 0 6px; }
+      .am-modal-body { padding: 14px 16px 10px; overflow: auto; }
+      .am-select-layout { height: auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+      .am-source-pane { padding: 0 0 14px; border-right: 0; border-bottom: 1px solid var(--am-line-soft); }
+      .am-source-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; overflow: visible; }
+      .am-source-card { min-height: 62px; margin: 0; padding: 8px; gap: 7px; }
+      .am-source-icon { width: 25px; height: 25px; font-size: 9px; }
+      .am-source-copy strong { font-size: 11px; }
+      .am-source-copy small { margin-top: 2px; font-size: 9px; }
+      .am-source-state { display: none; }
+      .am-source-foot { display: none; }
+      .am-table-pane { min-height: 390px; }
+      .am-table-toolbar { flex-wrap: wrap; }
+      .am-search { flex-basis: 100%; }
+      .am-filter-group { width: 100%; }
+      .am-filter { flex: 1; }
+      .am-table-box { min-height: 320px; }
+      .am-table-head, .am-table-row { grid-template-columns: 23px minmax(135px, 1fr) 54px 51px; gap: 6px; padding-left: 9px; padding-right: 9px; }
+      .am-table-head > :nth-child(3), .am-table-row > :nth-child(3) { display: none; }
+      .am-table-name { font-size: 10px; }
+      .am-table-comment { display: none; }
+      .am-modal-foot { min-height: 86px; padding: 11px 16px; align-items: flex-end; flex-direction: column; gap: 10px; }
+      .am-foot-status { width: 100%; }
+      .am-foot-actions { width: 100%; justify-content: flex-end; }
+      .am-button { height: 36px; }
+      .am-success-view { padding: 20px 16px; }
+      .am-result-grid { grid-template-columns: 1fr; }
+      .am-result-item { border-right: 0; border-bottom: 1px solid var(--am-line-soft); }
+      .am-result-item:last-child { border-bottom: 0; }
+    }
+  </style>
+  <link rel="stylesheet" href="../styles/typography.css">
+</head>
+<body>
+  <div class="am-page">
+    <aside class="am-sidebar">
+      <div class="am-brand"><span class="am-brand-mark">C</span><span><strong>CubeBuddy</strong><small>SEMANTIC DATA PLATFORM</small></span></div>
+      <nav class="am-nav">
+        <div class="am-nav-label">语义资产</div>
+        <button class="am-nav-item active"><span>◇</span><span>语义模型</span><em>12</em></button>
+        <button class="am-nav-item"><span>⌁</span><span>数据源</span></button>
+        <button class="am-nav-item"><span>◎</span><span>业务术语</span></button>
+        <div class="am-nav-label" style="margin-top:22px">系统</div>
+        <button class="am-nav-item"><span>◌</span><span>系统监控</span></button>
+      </nav>
+      <div class="am-sidebar-foot"><div class="am-health"><i></i><span>Cube 服务正常<small>最后检查：刚刚</small></span></div></div>
+    </aside>
+    <main class="am-main">
+      <header class="am-topbar"><div class="am-crumb">语义资产 <b>/</b> <strong>语义模型</strong></div><div class="am-top-actions"><div class="am-top-search">⌕　搜索模型、字段或术语</div><button class="am-env"><i></i>生产环境　⌄</button></div></header>
+      <div class="am-content">
+        <div class="am-page-head"><div><h1>语义模型</h1><p>用物理数据表构建一致、可复用的业务语义。</p></div><button class="am-button primary">＋ 自动建模</button></div>
+        <div class="am-skeleton-card"><div class="am-skeleton-head">模型列表</div><div class="am-skeleton-row"><span>订单分析</span><span>已加载</span><span>今天 10:42</span></div><div class="am-skeleton-row"><span>用户分析</span><span>草稿</span><span>昨天 18:21</span></div><div class="am-skeleton-row"><span>流量分析</span><span>已加载</span><span>8 月 20 日</span></div></div>
+      </div>
+    </main>
+  </div>
+
+  <div class="am-overlay" id="amOverlay">
+    <section class="am-modal" id="amModal" role="dialog" aria-modal="true" aria-labelledby="amTitle">
+      <header class="am-modal-head">
+        <div class="am-modal-title-row">
+          <div class="am-modal-title-block"><span class="am-modal-icon">✦</span><div><h2 id="amTitle">自动建模</h2><p class="am-modal-sub">从数据源读取表结构，生成可继续编辑的语义模型草稿。</p></div></div>
+          <button class="am-close" id="amClose" type="button" aria-label="关闭弹窗">×</button>
+        </div>
+        <div class="am-steps" aria-label="建模流程"><div class="am-step done"><i>✓</i>连接数据源</div><span class="am-step-line done"></span><div class="am-step active"><i>2</i>选择物理表</div><span class="am-step-line"></span><div class="am-step"><i>3</i>生成草稿</div></div>
+      </header>
+
+      <div class="am-modal-body" id="amSelectView">
+        <div class="am-select-layout">
+          <section class="am-source-pane" aria-labelledby="amSourceHeading">
+            <div class="am-section-heading"><h3 id="amSourceHeading">1. 选择数据源</h3><span id="amSourceCount">3 个</span></div>
+            <p class="am-source-help">选择要读取表结构的数据源，连接状态实时展示。</p>
+            <div class="am-source-list" id="amSourceList"></div>
+            <div class="am-source-foot">表清单来自最近一次连接检查。<br><button id="amRefreshSources" type="button">↻ 刷新数据源</button></div>
+          </section>
+          <section class="am-table-pane" aria-labelledby="amTableHeading">
+            <div class="am-table-top"><div><h3 id="amTableHeading">2. 选择物理表</h3><p id="amTableMeta">选择后将为每张表生成一个模型草稿。</p></div><span class="am-count" id="amCount">已选 0 张</span></div>
+            <div class="am-table-toolbar">
+              <label class="am-search"><span aria-hidden="true">⌕</span><input id="amSearch" type="search" placeholder="搜索表名或中文注释" autocomplete="off"><button class="am-clear" id="amClear" type="button" aria-label="清空搜索">×</button></label>
+              <div class="am-filter-group" role="group" aria-label="表类型筛选"><button class="am-filter active" data-filter="all" type="button">全部</button><button class="am-filter" data-filter="business" type="button">业务表</button><button class="am-filter" data-filter="dimension" type="button">维度表</button></div>
+            </div>
+            <div class="am-table-box">
+              <div class="am-table-head"><label><input id="amSelectAll" type="checkbox" aria-label="全选当前结果"></label><span>物理表名</span><span>中文注释</span><span>类型</span><span style="text-align:right">行数</span></div>
+              <div class="am-table-scroll" id="amTableScroll"></div>
+            </div>
+            <div class="am-table-note"><i>i</i><span>系统会自动推断主键、时间维度和基础指标，生成后仍可在模型编辑器中调整。</span></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="am-success-view" id="amSuccessView" hidden>
+        <div class="am-success-card"><div class="am-success-icon">✓</div><h3>模型草稿已生成</h3><p>已根据表结构完成基础字段推断，接下来可以进入编辑器检查和完善。</p><div class="am-result-grid"><div class="am-result-item"><strong id="amResultModels">0</strong><span>个模型草稿</span></div><div class="am-result-item"><strong id="amResultFields">0</strong><span>个字段已识别</span></div><div class="am-result-item"><strong>0</strong><span>个阻断问题</span></div></div><div class="am-success-actions"><button class="am-button" id="amBackToSelect" type="button">继续选择表</button><button class="am-button primary" id="amViewDraft" type="button">查看模型草稿</button></div></div>
+      </div>
+
+      <footer class="am-modal-foot" id="amModalFoot"><div class="am-foot-status" id="amFootStatus">请选择至少 1 张物理表</div><div class="am-progress" id="amProgress"><span class="am-spinner"></span><span>正在分析表结构…</span></div><div class="am-foot-actions"><button class="am-button" id="amCancel" type="button">取消</button><button class="am-button primary" id="amGenerate" type="button" disabled>生成模型草稿</button></div></footer>
+    </section>
+  </div>
+
+  <script>
+    const amSources = [
+      { id: "mysql_ods", label: "mysql_ods", meta: "MySQL · 生产", icon: "MY", tables: [
+        ["orders", "订单明细", "business", "86,240"], ["order_items", "订单商品明细", "business", "248,906"], ["users", "用户基础信息", "dimension", "28,704"], ["products", "商品主数据", "dimension", "12,520"], ["refund_records", "退款记录", "business", "8,431"], ["payment_records", "支付记录", "business", "95,801"], ["sales_channels", "销售渠道字典", "dimension", "24"] ] },
+      { id: "default", label: "default", meta: "MySQL · 生产", icon: "MY", tables: [
+        ["catalog_items", "示例数据目录", "dimension", "811"], ["term_synonym", "查询前术语扩展词典", "dimension", "94"], ["production_daily", "生产日报", "business", "365"], ["production_quality_test_results", "生产质量测试结果", "business", "6,421"], ["supplier_evaluation", "供应商评价", "business", "4,218"], ["user_t", "用户基础信息", "dimension", "28,704"] ] },
+      { id: "clickhouse_dw", label: "clickhouse_dw", meta: "ClickHouse · 数仓", icon: "CH", tables: [
+        ["dws_order_day", "订单日汇总", "business", "18,540"], ["dws_user_activity", "用户活跃日汇总", "business", "12,806"], ["dim_date", "日期维度", "dimension", "3,652"], ["dim_region", "区域维度", "dimension", "2,913"] ] }
+    ];
+    const amState = { source: "mysql_ods", query: "", filter: "all", selected: new Set(), generating: false };
+    const am = (id) => document.getElementById(id);
+    const amEscape = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+    const amActiveSource = () => amSources.find((source) => source.id === amState.source);
+    const amVisibleTables = () => {
+      const query = amState.query.trim().toLowerCase();
+      return amActiveSource().tables.filter(([name, comment, type]) => {
+        const matchesQuery = !query || `${name} ${comment}`.toLowerCase().includes(query);
+        const matchesFilter = amState.filter === "all" || type === amState.filter;
+        return matchesQuery && matchesFilter;
+      });
+    };
+    const amSelectedKey = (name) => `${amState.source}:${name}`;
+    const amSelectedTables = () => amActiveSource().tables.filter(([name]) => amState.selected.has(amSelectedKey(name)));
+
+    function amRenderSources() {
+      am("amSourceList").innerHTML = amSources.map((source) => `<button class="am-source-card ${source.id === amState.source ? "active" : ""}" data-source="${source.id}" type="button"><span class="am-source-icon">${source.icon}</span><span class="am-source-copy"><strong>${source.label}</strong><small>${source.meta} · ${source.tables.length} 张表</small></span><i class="am-source-state" aria-label="连接正常"></i></button>`).join("");
+    }
+
+    function amRenderTables() {
+      const visible = amVisibleTables();
+      const tableScroll = am("amTableScroll");
+      if (!visible.length) {
+        tableScroll.innerHTML = `<div class="am-table-empty"><strong>没有匹配的物理表</strong><span>试试其他关键词，或切换表类型筛选。</span></div>`;
+      } else {
+        tableScroll.innerHTML = visible.map(([name, comment, type, rows]) => {
+          const checked = amState.selected.has(amSelectedKey(name));
+          return `<label class="am-table-row ${checked ? "selected" : ""}"><input type="checkbox" data-table="${amEscape(name)}" ${checked ? "checked" : ""}><span class="am-table-name" title="${amEscape(name)}">${amEscape(name)}</span><span class="am-table-comment" title="${amEscape(comment)}">${amEscape(comment)}</span><span class="am-type ${type === "business" ? "business" : ""}">${type === "business" ? "业务表" : "维度表"}</span><span class="am-row-count">${rows}</span></label>`;
+        }).join("");
+      }
+      const selectedVisible = visible.filter(([name]) => amState.selected.has(amSelectedKey(name))).length;
+      const allSelected = visible.length > 0 && selectedVisible === visible.length;
+      const selectAll = am("amSelectAll");
+      selectAll.checked = allSelected;
+      selectAll.indeterminate = selectedVisible > 0 && !allSelected;
+      const totalSelected = amSelectedTables().length;
+      am("amCount").textContent = `已选 ${totalSelected} 张`;
+      am("amFootStatus").innerHTML = totalSelected ? `<strong>已选择 ${totalSelected} 张表</strong>，将生成 ${totalSelected} 个模型草稿` : "请选择至少 1 张物理表";
+      am("amGenerate").disabled = totalSelected === 0 || amState.generating;
+    }
+
+    function amRender() {
+      amRenderSources();
+      amRenderTables();
+      am("amTableMeta").textContent = `${amActiveSource().tables.length} 张物理表可用 · 选择后将为每张表生成一个模型草稿。`;
+      am("amClear").classList.toggle("visible", Boolean(amState.query));
+      document.querySelectorAll(".am-filter").forEach((button) => button.classList.toggle("active", button.dataset.filter === amState.filter));
+    }
+
+    function amResetGenerating() {
+      amState.generating = false;
+      am("amProgress").classList.remove("show");
+      am("amGenerate").disabled = amSelectedTables().length === 0;
+      am("amCancel").disabled = false;
+    }
+
+    function amGenerate() {
+      if (!amSelectedTables().length || amState.generating) return;
+      amState.generating = true;
+      am("amGenerate").disabled = true;
+      am("amCancel").disabled = true;
+      am("amProgress").classList.add("show");
+      am("amFootStatus").textContent = "正在读取字段并推断模型结构…";
+      setTimeout(() => {
+        const selected = amSelectedTables();
+        am("amResultModels").textContent = selected.length;
+        am("amResultFields").textContent = selected.reduce((total, item) => total + (item[2] === "business" ? 12 : 6), 0);
+        am("amSelectView").hidden = true;
+        am("amModalFoot").hidden = true;
+        am("amSuccessView").hidden = false;
+        am("amModal").classList.add("am-is-success");
+      }, 1200);
+    }
+
+    am("amSourceList").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-source]");
+      if (!button || amState.generating) return;
+      amState.source = button.dataset.source;
+      amState.query = "";
+      am("amSearch").value = "";
+      amState.filter = "all";
+      amRender();
+    });
+    am("amSearch").addEventListener("input", (event) => { amState.query = event.target.value; amRender(); });
+    am("amClear").addEventListener("click", () => { amState.query = ""; am("amSearch").value = ""; amRender(); am("amSearch").focus(); });
+    document.querySelectorAll(".am-filter").forEach((button) => button.addEventListener("click", () => { amState.filter = button.dataset.filter; amRender(); }));
+    am("amSelectAll").addEventListener("change", () => {
+      const visible = amVisibleTables();
+      visible.forEach(([name]) => am("amSelectAll").checked ? amState.selected.add(amSelectedKey(name)) : amState.selected.delete(amSelectedKey(name)));
+      amRenderTables();
+    });
+    am("amTableScroll").addEventListener("change", (event) => {
+      const input = event.target.closest("[data-table]");
+      if (!input) return;
+      const key = amSelectedKey(input.dataset.table);
+      if (input.checked) amState.selected.add(key); else amState.selected.delete(key);
+      amRenderTables();
+    });
+    am("amRefreshSources").addEventListener("click", () => {
+      am("amSourceCount").textContent = "刚刚更新";
+      setTimeout(() => { am("amSourceCount").textContent = `${amSources.length} 个`; }, 1600);
+    });
+    am("amGenerate").addEventListener("click", amGenerate);
+    am("amBackToSelect").addEventListener("click", () => {
+      am("amSelectView").hidden = false;
+      am("amModalFoot").hidden = false;
+      am("amSuccessView").hidden = true;
+      am("amModal").classList.remove("am-is-success");
+      amResetGenerating();
+      amRender();
+    });
+    am("amViewDraft").addEventListener("click", () => { am("amFootStatus").textContent = "原型演示：已进入模型编辑器"; am("amSuccessView").querySelector("h3").textContent = "已进入模型编辑器"; });
+    function amClose() { am("amOverlay").style.display = "none"; }
+    am("amClose").addEventListener("click", amClose);
+    am("amCancel").addEventListener("click", amClose);
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape" && am("amOverlay").style.display !== "none") amClose(); });
+    amRender();
+  </script>
+</body>
+</html>

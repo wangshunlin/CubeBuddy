@@ -1,0 +1,537 @@
+/* Cube Console shared typography foundation. */
+:root {
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, ui-monospace, monospace;
+  --fs-display: 24px;
+  --fs-title: 20px;
+  --fs-section: 16px;
+  --fs-body: 14px;
+  --fs-meta: 12px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.25;
+  --lh-title: 1.3;
+  --lh-section: 1.35;
+  --lh-body: 1.5;
+  --lh-relaxed: 1.6;
+  --control-height: 40px;
+  --control-radius: 6px;
+  --control-border: #dfe4e8;
+  --control-focus: #2da49c;
+  --control-bg: #fff;
+  --control-text: #3f4c57;
+  --control-placeholder: #9aa6ae;
+}
+
+html, body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+button, input, select, textarea { font: inherit; }
+
+/* Shared product mark used by the console and its browser prototypes. */
+body .brand-mark,
+body .am-brand-mark,
+body .demo-brand-mark {
+  color: transparent;
+  font-size: 0;
+  background-color: transparent;
+  background-image: url("../assets/cobebuddy-logo.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.type-display { font-size: var(--fs-display); font-weight: var(--fw-bold); line-height: var(--lh-tight); }
+.type-title { font-size: var(--fs-title); font-weight: var(--fw-bold); line-height: var(--lh-title); }
+.type-section { font-size: var(--fs-section); font-weight: var(--fw-semibold); line-height: var(--lh-section); }
+.type-body { font-size: var(--fs-body); font-weight: var(--fw-regular); line-height: var(--lh-body); }
+.type-control { font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: var(--lh-body); }
+.type-meta { font-size: var(--fs-meta); font-weight: var(--fw-regular); line-height: var(--lh-body); }
+.type-meta-strong { font-size: var(--fs-meta); font-weight: var(--fw-semibold); line-height: var(--lh-body); }
+.type-relaxed { line-height: var(--lh-relaxed); }
+.type-code { font-family: var(--font-mono); font-size: var(--fs-meta); line-height: var(--lh-relaxed); }
+
+/* Production app compatibility mapping. These selectors let existing markup
+   adopt the shared scale before component-specific styles are simplified. */
+.app .brand strong,
+.app .nav button,
+.app .btn,
+.app .link,
+.app .search-input,
+.app .global-search,
+.app .env,
+.app .model-search input,
+.app .model-filters button,
+.app .model-source-trigger,
+.app .model-source-option,
+.app .field,
+.app .field input,
+.app .field select,
+.app .field textarea,
+.app .checkline,
+.app .tabs button,
+.app .segmented button,
+.app .model-browser-head {
+  font-size: var(--fs-body);
+}
+
+/* Match the model sidebar title to the semantic section title used by data-source lists. */
+.app .model-browser-head > strong {
+  font-size: var(--fs-section);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-section);
+}
+
+.app .page-head h1 { font-size: var(--fs-display); font-weight: var(--fw-bold); line-height: var(--lh-tight); }
+.app .brand strong { font-size: var(--fs-title); }
+.app .page-head p,
+.app .crumb,
+.app .breadcrumb,
+.app .card-head p,
+.app .helper,
+.app .muted,
+.app .field small,
+.app .table th,
+.app .table small,
+.app .model-title p,
+.app .change-note small,
+.app .modal-sub,
+.app .modal-foot-note,
+.app .section-sub,
+.app .tool-catalog-meta,
+.app .tool-drawer-muted,
+.app .tool-drawer-description,
+.app .token-action-hint,
+.app .token-list-head small,
+.app .token-row-meta,
+.app .setting-row small,
+.app .confirm-item small,
+.app .step {
+  font-size: var(--fs-meta);
+  line-height: var(--lh-body);
+}
+
+.app .card-head h2,
+.app .card-head h3,
+.app .section-title,
+.app .health-card h3,
+.app .integration-card h3,
+.app .service h3 {
+  font-size: var(--fs-section);
+  line-height: var(--lh-section);
+}
+
+.app .modal h2,
+.app .drawer-head h2,
+.app .tool-drawer-head h2,
+.app .model-title h2 {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-title);
+}
+
+.app .model-item strong,
+.app .table td,
+.app .table strong,
+.app .change-note strong,
+.app .setting-row strong,
+.app .confirm-item strong,
+.app .member-exposure,
+.app .member-actions .link,
+.app .member-modal-switch strong,
+.app .tool-catalog-name,
+.app .token-row,
+.app .token-generate-field {
+  font-size: var(--fs-body);
+}
+
+.app .badge,
+.app .model-item small,
+.app .empty,
+.app .model-titlebar .status-strip,
+.app .token-panel-badge,
+.app .token-list-count,
+.app .token-availability,
+.app .token-table-head,
+.app .auto-source-option-main small,
+.app .auto-table-column-label,
+.app .auto-table-rows,
+.app .auto-table-loading,
+.app .auto-table-empty,
+.app .tool-catalog-meta,
+.app .tool-overview-grid span,
+.app .token-row-meta,
+.app .token-panel-badge {
+  font-size: var(--fs-meta);
+}
+
+.app .mono,
+.app .secret,
+.app .yaml,
+.app .yaml-editor,
+.app .code-panel,
+.app .openapi-viewer,
+.app .log-shell {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-relaxed);
+}
+
+.app .auto-source-option,
+.app .auto-source-option-main strong,
+.app .auto-table-option,
+.app .auto-table-name,
+.app .auto-table-comment,
+.app .tool-catalog-summary,
+.app .tool-catalog-description,
+.app .tool-drawer-description,
+.app .tool-call-flow,
+.app .tool-parameter-row,
+.app .tool-request-card p,
+.app .tool-response-row {
+  font-size: var(--fs-body);
+}
+
+.app .login-card input,
+.app .login-card .btn { font-size: var(--fs-body); }
+.app .login-card > p,
+.app .login-tip { font-size: var(--fs-meta); line-height: var(--lh-body); }
+.app .workspace strong,
+.app .profile strong,
+.app .health strong,
+.app .kpi span,
+.app .kpi small,
+.app .activity p small,
+.app .activity time,
+.app .quick small,
+.app .service small,
+.app .task small,
+.app .setting-row small,
+.app .confirm-item small,
+.app .confirm-item em { font-size: var(--fs-meta); }
+.app .workspace small,
+.app .nav-label,
+.app .nav em,
+.app .health small,
+.app .profile small,
+.app .global-search kbd { font-size: var(--fs-meta); }
+.app .kpi strong,
+.app .service strong { font-size: var(--fs-display); }
+.app .token-list-head { font-size: var(--fs-body); }
+.app .token-list-head strong,
+.app .generated-token strong { font-size: var(--fs-section); }
+.app .token-row-main strong { font-size: var(--fs-meta); }
+.app .token-row-main small,
+.app .generated-token small { font-size: var(--fs-meta); }
+.app .activity p,
+.app .quick strong,
+.app .task strong,
+.app .setting-row strong,
+.app .confirm-item strong,
+.app .integration-card > p,
+.app .integration-meta div,
+.app .integration-meta strong { font-size: var(--fs-body); }
+.app .quick strong,
+.app .task strong,
+.app .setting-row strong,
+.app .confirm-item strong { line-height: 1.4; }
+.app .empty b,
+.app .query-empty b { font-size: var(--fs-section); }
+.app .term-chip,
+.app .cache-pill,
+.app .query-summary,
+.app .query-output-tabs button,
+.app .query-empty,
+.app .query-runbar span,
+.app .member-choice,
+.app .query-error { font-size: var(--fs-body); }
+.app .openapi-details summary,
+.app .openapi-detail-grid h4,
+.app .openapi-description h4,
+.app .openapi-param-head strong,
+.app .openapi-response,
+.app .diff-label,
+.app .openapi-param p,
+.app .openapi-request p,
+.app .openapi-description p { font-size: var(--fs-body); }
+.app .openapi-param-meta,
+.app .openapi-param code,
+.app .openapi-content pre { font-family: var(--font-mono); font-size: var(--fs-meta); }
+.app .openapi-content { font-size: var(--fs-meta); }
+.app .toast { font-size: var(--fs-body); }
+
+/* Shared form baseline: matches the semantic-model basic-information page. */
+body input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="search"]),
+body select,
+body textarea:not(.yaml-editor) {
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  color: var(--control-text);
+  background: var(--control-bg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  outline: 0;
+}
+body input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="search"]),
+body select {
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0 12px;
+}
+body input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="search"]),
+body textarea:not(.yaml-editor) { width: 100%; }
+body textarea:not(.yaml-editor) {
+  min-height: 80px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+body input[readonly] { color: var(--muted); background: #f7f9fa; }
+body input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="search"]):focus,
+body select:focus,
+body textarea:not(.yaml-editor):focus {
+  border-color: var(--control-focus);
+  box-shadow: none;
+}
+body input[type="search"] {
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--control-text);
+  background: transparent;
+  outline: 0;
+  box-shadow: none;
+}
+
+.app .field input,
+.app .field select,
+.app .field textarea,
+.app .search-input,
+.app .model-source-trigger,
+.app .login-card input {
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  color: var(--control-text);
+  background: var(--control-bg);
+  font-size: var(--fs-body);
+}
+.app .field select,
+.app .mobile-model-select { width: 100%; }
+.app .field input,
+.app .field select,
+.app .search-input,
+.app .model-source-trigger,
+.app .login-card input {
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0 12px;
+}
+.app .field textarea { line-height: var(--lh-body); }
+.app .field textarea { min-height: 80px; padding: 10px 12px; }
+.app .model-source-trigger { display: flex; align-items: center; justify-content: space-between; font: inherit; font-weight: var(--fw-semibold); text-align: left; }
+.app .model-search,
+.app .tool-search,
+.app .auto-source-search,
+.app .auto-table-search {
+  height: var(--control-height);
+  padding: 0 12px;
+  gap: 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: #87949d;
+}
+.app .model-search input,
+.app .tool-search input,
+.app .auto-source-search input,
+.app .auto-table-search input {
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--control-text);
+  background: transparent;
+  font-size: var(--fs-body);
+  outline: 0;
+  box-shadow: none;
+}
+.app .model-search input::placeholder,
+.app .tool-search input::placeholder,
+.app .auto-source-search input::placeholder,
+.app .auto-table-search input::placeholder,
+.app .search-input::placeholder,
+.app .field input::placeholder,
+.app .field textarea::placeholder,
+.app .login-card input::placeholder { color: var(--control-placeholder); }
+.app .search-input:focus,
+.app .field input:focus,
+.app .field select:focus,
+.app .field textarea:focus,
+.app .model-source-trigger:focus,
+.app .login-card input:focus,
+.app .tool-edit-block > textarea:focus,
+.app .tool-edit-field textarea:focus,
+.app .yaml-editor:focus,
+.app .token-input-wrap input:focus,
+.app .model-search:focus-within,
+.app .tool-search:focus-within,
+.app .auto-source-search:focus-within,
+.app .auto-table-search:focus-within {
+  border-color: var(--control-focus);
+  outline: 0;
+  outline-offset: 0;
+  box-shadow: none;
+}
+.app .model-search input:focus,
+.app .tool-search input:focus,
+.app .auto-source-search input:focus,
+.app .auto-table-search input:focus { border: 0; box-shadow: none; }
+.app .yaml-editor:focus { border-width: 1px; }
+.app .auto-table-search > span { font-size: 18px; line-height: 1; transform: rotate(-20deg); }
+.app .field input[readonly],
+.app .field select:disabled,
+.app .login-card input:disabled { background: #f7f9fa; color: var(--muted); }
+.app .model-search input,
+.app .tool-search input,
+.app .auto-source-search input,
+.app .auto-table-search input { font-size: var(--fs-body); }
+
+/* Search containers own the border; keep their text inputs borderless in every focus state. */
+.app .model-search > input,
+.app .model-search > input:focus,
+.app .model-search > input:focus-visible,
+.app .auto-source-search > input,
+.app .auto-source-search > input:focus,
+.app .auto-source-search > input:focus-visible,
+.app .auto-table-search > input,
+.app .auto-table-search > input:focus,
+.app .auto-table-search > input:focus-visible,
+.app .tool-search > input,
+.app .tool-search > input:focus,
+.app .tool-search > input:focus-visible {
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: 1 1 auto;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Keep the glossary title on one line while the search field takes the remaining space. */
+.app .glossary-card .card-head > div { flex: 0 0 auto; min-width: max-content; }
+.app .glossary-card .card-head > .search-input { flex: 1 1 auto; width: auto; min-width: 0; }
+.app .glossary-page-search {
+  width: 280px;
+  min-width: 240px;
+}
+
+/* Keep table headings as readable as the table body and visible while scrolling. */
+.app .table th {
+  font-size: var(--fs-body);
+}
+.app .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8f9fa;
+  box-shadow: 0 1px 0 var(--line2);
+}
+
+/* Keep glossary columns stable when a standard term or definition is long. */
+.app .glossary-table {
+  width: 100%;
+  min-width: 760px;
+  table-layout: fixed;
+}
+.app .glossary-card .table-wrap {
+  max-height: calc(100vh - 150px);
+}
+.app .glossary-table th,
+.app .glossary-table td {
+  min-width: 0;
+}
+.app .glossary-table .glossary-standard-cell,
+.app .glossary-table .glossary-description-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app .glossary-table .glossary-standard-cell strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app .glossary-table .glossary-alias-cell {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.app .glossary-table .glossary-actions-cell {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+/* Use the same page-title spacing as the other modules; keep the split workbench layout intact. */
+.app.page.model-page-shell { padding: 28px; }
+@media (max-width: 760px) {
+  .app.page.model-page-shell { padding: 17px 14px; }
+}
+
+/* Auto-model modal lives outside .app, so it needs the same search baseline in the modal scope. */
+.modal .auto-source-search {
+  height: 38px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid #d8e0e4;
+  border-radius: 7px;
+  background: #fff;
+  color: #9aa5ad;
+}
+.modal .auto-source-search:focus-within {
+  border-color: var(--control-focus);
+  box-shadow: 0 0 0 3px rgba(45, 164, 156, .09);
+}
+.modal .auto-source-search > span { font-size: 17px; line-height: 1; transform: rotate(-20deg); }
+.modal .auto-source-search > input,
+.modal .auto-source-search > input:focus,
+.modal .auto-source-search > input:focus-visible {
+  width: auto !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: 1 1 auto;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  color: var(--control-text);
+  background: transparent !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.modal .auto-source-search > input::placeholder { color: var(--control-placeholder); }

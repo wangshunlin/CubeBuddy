@@ -1,0 +1,1077 @@
+openapi: 3.0.3
+info:
+  title: Cube MCP API
+  version: 1.0.0
+  description: 面向 AI Agent 的 Cube 语义查询接口。先发现模型，再获取模型详情，最后执行查询。
+servers:
+  - url: http://127.0.0.1:18080
+    description: Cube Console 统一入口
+security:
+  - bearerAuth: []
+tags:
+  - name: meta
+    description: 语义模型发现与元数据
+  - name: data
+    description: 查询、维度搜索和业务术语归一化
+  - name: sql
+    description: SQL 生成与查询校验
+paths:
+  /cubejs-api/v1/meta:
+    get:
+      tags:
+        - meta
+      operationId: cube_meta
+      summary: 发现 Cube 语义模型
+      description: 第一步调用本工具发现可用 Cube。本工具无需参数，仅返回模型名称、描述和成员数量，适合 Agent
+        选择目标模型；不要据此猜测维度名。选定 name 后必须继续调用 `cube_meta_detail`（GET
+        /cubejs-api/v1/meta/{name}）获取真实的 measures、dimensions、segments 和
+        joins，之后才能调用 cube_load 或 cube_search。
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 元数据返回成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleMetaResponse"
+        "401":
+          description: 缺少或无效的 JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+        "403":
+          description: 鉴权失败
+        "500":
+          description: Cube 内部错误
+        "502":
+          description: Cube API 或代理不可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+  /cubejs-api/v1/meta/{name}:
+    get:
+      tags:
+        - meta
+      operationId: cube_meta_detail
+      summary: 获取单个 Cube 语义模型详情
+      description: 第二步调用本工具获取真实字段。`name` 必须逐字复制自 `cube_meta` 返回结果，禁止猜测或改写。本工具固定返回该
+        Cube 的完整 measures、dimensions、segments、joins 及 description；拿到详情后再构造
+        cube_load/cube_search 请求。
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Cube 名称（从 cube_meta 返回结果中选择）
+          schema:
+            type: string
+            minLength: 1
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 元数据返回成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleMetaResponse"
+        "401":
+          description: 缺少或无效的 JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+        "403":
+          description: 鉴权失败
+        "404":
+          description: cube 不存在
+        "500":
+          description: Cube 内部错误
+        "502":
+          description: Cube API 或代理不可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+  /cubejs-api/v1/load:
+    post:
+      tags:
+        - data
+      operationId: cube_load
+      summary: 执行 Cube 语义查询
+      description: >-
+        执行 Cube 语义查询并返回数据。请求体必须符合 Cube REST API /v1/load 格式，
+        `query` 是 Cube Query Format 查询对象，不要再额外包一层 `query`。调用前按
+        `cube_meta` → `cube_meta_detail` → `cube_load` 顺序获取真实 member；member
+        必须逐字复制且大小写敏感，不要猜测字段名。普通单查询不要填写 `queryType`；
+        查询结构或 member 错误时，重新获取 `cube_meta_detail`，不要盲目重试；复杂查询的
+        预校验请使用原生 MCP 接入。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V1LoadRequest"
+      responses:
+        "200":
+          description: Cube 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V1LoadResponse"
+        "400":
+          description: 查询参数或 Cube member 校验失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+        "401":
+          description: 缺少或无效的 JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+        "403":
+          description: 鉴权失败
+        "500":
+          description: Cube 内部错误
+        "502":
+          description: Cube API 或代理不可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+  /cubejs-api/v1/search:
+    post:
+      tags:
+        - data
+      operationId: cube_search
+      summary: 搜索维度值
+      description: Cube Console 扩展接口：在指定维度中按 contains 条件搜索值。dimension 必须逐字复制自
+        cube_meta_detail 的 dimensions，禁止猜测或使用中文字段名；本接口内部转换为 Cube `/load`。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CubeConsoleSearchRequest"
+      responses:
+        "200":
+          description: 匹配结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V1LoadResponse"
+        "400":
+          description: 查询参数或 Cube member 校验失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+        "401":
+          description: 缺少或无效的 JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+        "403":
+          description: 鉴权失败
+        "500":
+          description: 代理或 Cube 内部错误
+        "502":
+          description: Cube API 或代理不可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+  /cubejs-api/v1/glossary-resolve:
+    post:
+      tags:
+        - data
+      operationId: cube_glossary_resolve
+      summary: 解析业务术语
+      description: Cube Console 扩展接口：将用户口语、简称或别名映射为标准术语，便于生成 Cube
+        查询。涉及部门、机构或业务名时，应先调用本工具，再将 standard 原样作为 filter 值；不要直接把用户口语写入查询。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CubeConsoleGlossaryResolveRequest"
+      responses:
+        "200":
+          description: 术语命中结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleGlossaryResolveResponse"
+        "400":
+          description: text 缺失
+        "401":
+          description: 缺少或无效的 JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+        "403":
+          description: 鉴权失败
+        "500":
+          description: 代理内部错误
+        "502":
+          description: Cube API 或代理不可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CubeConsoleErrorResponse"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "在配置台「集成中心 → 令牌生成」签发 JWT，并通过 Authorization: Bearer <JWT> 传递。"
+  schemas:
+    CubeConsoleMetaResponse:
+      type: object
+      required:
+        - cubes
+        - summary
+        - generatedAt
+      properties:
+        cubes:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+            properties:
+              name:
+                type: string
+                description: Cube 名称，来自可用模型目录。
+              title:
+                type: string
+                description: 模型展示名称。
+              description:
+                type: string
+                description: 模型描述。
+              measureCount:
+                type: integer
+                description: 指标数量。
+              dimensionCount:
+                type: integer
+                description: 维度数量。
+              segmentCount:
+                type: integer
+                description: 筛选段数量。
+              measures:
+                type: array
+                items:
+                  $ref: "#/components/schemas/V1CubeMetaMeasure"
+                description: 命名模型详情中的指标列表。
+              dimensions:
+                type: array
+                items:
+                  $ref: "#/components/schemas/V1CubeMetaDimension"
+                description: 命名模型详情中的维度列表。
+              segments:
+                type: array
+                items:
+                  $ref: "#/components/schemas/V1CubeMetaSegment"
+                description: 命名模型详情中的筛选段列表。
+              joins:
+                type: array
+                items:
+                  $ref: "#/components/schemas/V1CubeMetaJoin"
+                description: 命名模型详情中的关联列表。
+          description: 模型摘要或单个模型详情列表。
+        summary:
+          type: boolean
+          description: 是否为摘要响应；true 表示只返回模型名称、描述和成员数量。
+        generatedAt:
+          type: integer
+          format: int64
+          description: 响应生成时间，Unix 毫秒时间戳。
+      description: Cube Console 元数据响应。根路径返回摘要；带 name 的路径返回单个 Cube 详情。
+    CubeConsoleErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        ok:
+          type: boolean
+          example: false
+          description: 是否成功；错误响应通常为 false。
+        code:
+          type: string
+          description: 稳定的错误代码。
+        error:
+          type: string
+          description: 面向调用方的错误信息。
+        member:
+          type: string
+          description: 校验失败的 Cube member（如果适用）。
+        available:
+          type: array
+          items:
+            type: string
+          description: 资源不存在时可用的名称列表。
+      description: Cube Console 或 Cube Core 返回的错误响应。
+    V1LoadRequest:
+      type: object
+      required:
+        - query
+      additionalProperties: true
+      properties:
+        query:
+          oneOf:
+            - $ref: "#/components/schemas/V1LoadRequestQuery"
+            - type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/V1LoadRequestQuery"
+          description: 单查询时为 Cube Query Format 对象；多查询时为对象数组。不要再额外包一层 query。
+        queryType:
+          type: string
+          description: Cube 查询类型。通常由 Cube 根据 query 结构处理；仅在需要明确指定查询类型时填写。
+        cache:
+          type: string
+          enum:
+            - stale-if-slow
+            - stale-while-revalidate
+            - must-revalidate
+            - no-cache
+          description: Cube 查询缓存策略。
+      description: >-
+        Cube REST API /v1/load 请求体。必须包含 `query`。单查询时 query 为一个
+        Cube Query Format 对象；仅在多查询混合场景使用 query 数组并将 queryType 设为
+        `multi`。`cache` 是可选的顶层参数；`responseFormat` 应填写在 query 对象内。
+    V1LoadResponse:
+      type: object
+      required:
+        - results
+      additionalProperties: true
+      description: >-
+        Cube Core /v1/load 查询结果。普通查询也使用 results 数组，通常包含一个结果；
+        data、annotation 等字段位于 results 数组元素内。响应顶层还可能包含 Cube 版本相关的扩展字段。
+      properties:
+        pivotQuery:
+          type: object
+          additionalProperties: true
+          description: Cube 实际执行的透视查询信息。
+        slowQuery:
+          type: boolean
+          description: 是否被 Cube 标记为慢查询。
+        queryType:
+          type: string
+          description: Cube 返回的查询类型，例如 regularQuery。
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1LoadResult"
+          description: 单查询或 multi 查询的结果列表；普通查询通常只有一个元素。
+    CubeConsoleSearchRequest:
+      type: object
+      required:
+        - dimension
+        - query
+      additionalProperties: false
+      properties:
+        dimension:
+          type: string
+          minLength: 1
+          description: 要搜索的完整维度 member，必须来自 cube_meta_detail。
+        query:
+          type: string
+          minLength: 1
+          description: 包含匹配关键词。
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
+          description: 最多返回条数。
+      description: 按指定维度搜索可用值的请求体。
+    CubeConsoleGlossaryResolveRequest:
+      type: object
+      required:
+        - text
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+          minLength: 1
+          description: 需要解析的用户问题、业务短语或别名。
+      description: 将用户问题或短语中的业务别名解析为标准术语的请求体。
+    CubeConsoleGlossaryResolveResponse:
+      type: object
+      required:
+        - ok
+        - hits
+      properties:
+        ok:
+          type: boolean
+        hits:
+          type: array
+          items:
+            type: object
+            required:
+              - alias
+              - standard
+              - description
+            properties:
+              alias:
+                type: string
+                description: 用户输入的口语、简称或别名。
+              standard:
+                type: string
+                description: 匹配到的标准业务术语。
+              description:
+                type: string
+                description: 标准业务术语的定义或业务口径说明。
+      description: 业务术语解析结果。
+    V1CubeMetaMeasure:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+          description: 指标完整 member 名称，必须原样复制用于查询。
+        title:
+          type: string
+          description: 指标展示名称。
+        shortTitle:
+          type: string
+          description: 指标短名称。
+        description:
+          type: string
+          description: 指标业务描述。
+        type:
+          type: string
+          description: 指标数据类型。
+        aggType:
+          type: string
+          description: 指标聚合类型。
+        meta:
+          type: object
+          additionalProperties: true
+          description: 指标的附加元数据。
+        drillMembers:
+          type: array
+          items:
+            type: string
+          description: 该指标支持下钻的 member 列表。
+        format:
+          $ref: "#/components/schemas/V1CubeMetaFormat"
+        formatDescription:
+          $ref: "#/components/schemas/V1CubeMetaFormatDescription"
+        currency:
+          type: string
+          description: 指标使用的货币代码。
+        aliasMember:
+          type: string
+          description: 该指标对应的别名 member。
+      description: Cube 指标元数据。name 是可用于查询的完整 member 名称。
+    V1CubeMetaDimension:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+          description: 维度完整 member 名称，必须原样复制用于查询。
+        title:
+          type: string
+          description: 维度展示名称。
+        shortTitle:
+          type: string
+          description: 维度短名称。
+        description:
+          type: string
+          description: 维度业务描述。
+        type:
+          type: string
+          description: 维度数据类型，例如 string、number 或 time。
+        aliasMember:
+          type: string
+          description: 该维度对应的别名 member。
+        granularities:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1CubeMetaDimensionGranularity"
+          description: 该时间维度支持的粒度列表。
+        meta:
+          type: object
+          additionalProperties: true
+          description: 维度的附加元数据。
+        suggestFilterValues:
+          type: boolean
+          description: 是否建议通过搜索接口获取筛选值。
+        format:
+          $ref: "#/components/schemas/V1CubeMetaFormat"
+        formatDescription:
+          $ref: "#/components/schemas/V1CubeMetaFormatDescription"
+        currency:
+          type: string
+          description: 维度使用的货币代码（如果适用）。
+        order:
+          $ref: "#/components/schemas/V1CubeMetaDimensionOrder"
+        key:
+          type: string
+          description: 维度的底层键字段（如果适用）。
+      description: Cube 维度元数据。name 是可用于查询的完整 member 名称。
+    V1CubeMetaSegment:
+      type: object
+      required:
+        - name
+        - title
+        - shortTitle
+      properties:
+        name:
+          type: string
+          description: 筛选段完整 member 名称。
+        title:
+          type: string
+          description: 筛选段展示名称。
+        shortTitle:
+          type: string
+          description: 筛选段短名称。
+        description:
+          type: string
+          description: 筛选段业务描述。
+        meta:
+          type: object
+          additionalProperties: true
+          description: 筛选段的附加元数据。
+      description: Cube 预置筛选段元数据。
+    V1CubeMetaJoin:
+      type: object
+      required:
+        - name
+        - relationship
+      properties:
+        name:
+          type: string
+          description: 关联目标 Cube 或 View 名称。
+        relationship:
+          type: string
+          description: 关联关系类型。
+      description: Cube 模型关联元数据。
+    V1LoadRequestQuery:
+      type: object
+      additionalProperties: true
+      properties:
+        measures:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: 要返回的指标。必须使用 cube_meta_detail 返回的 measures 中的完整 member，原样复制且大小写敏感。
+        dimensions:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: 要返回的维度。必须使用 cube_meta_detail 返回的 dimensions 中的完整 member，原样复制且大小写敏感。
+        segments:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: 可用的预置筛选段。必须使用 cube_meta_detail 返回的 segments 中的完整 member，原样复制且大小写敏感。
+        filters:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1LoadRequestQueryFilterItem"
+          description: 过滤条件。member 必须是 cube_meta_detail 返回的完整维度/指标名，values 必须是字符串数组。
+        timeDimensions:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1LoadRequestQueryTimeDimension"
+          description: 时间维度过滤；dimension 必须是 cube_meta_detail 返回的 time 类型维度。
+        order:
+          oneOf:
+            - type: object
+              additionalProperties:
+                type: string
+                enum:
+                  - asc
+                  - desc
+            - type: array
+              items:
+                type: array
+                minItems: 2
+                maxItems: 2
+                items:
+                  type: string
+          description: 排序键必须是元数据中的完整 member 名称，值为 asc 或 desc。
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          description: 返回行数上限，范围为 1 到 50000。
+        offset:
+          type: integer
+          minimum: 0
+          description: 分页偏移量，最小为 0。
+        total:
+          type: boolean
+          default: false
+          description: 是否计算不受 limit/offset 限制的总行数。
+        timezone:
+          type: string
+          description: 查询时区，使用 TZ Database 名称，例如 Asia/Shanghai。
+        ungrouped:
+          type: boolean
+          default: false
+          description: 是否执行未聚合明细查询。
+        subqueryJoins:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1LoadRequestQueryJoinSubquery"
+          description: 子查询关联列表，仅在确有需要时使用。
+        joinHints:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1LoadRequestJoinHint"
+          description: 关联提示列表，仅在元数据明确支持时使用。
+        responseFormat:
+          type: string
+          enum:
+            - default
+            - compact
+            - columnar
+          default: default
+          description: >-
+            查询结果 data 字段的返回格式。default 返回行式数据，compact 返回 members/dataset，
+            columnar 返回 members/columns。该字段属于 Cube Query Format 查询对象。
+      description: >-
+        Cube Query Format 查询对象，直接填写在请求体的 query 中，不要再额外包一层 query。
+        所有 member 必须从 cube_meta_detail 返回结果逐字复制，大小写敏感；不要根据中文标题或自然语言猜测。
+        filters 中可使用 and/or 逻辑组；普通过滤项需要 values，set、notSet 和 measureFilter 可省略 values。
+        timeDimensions 仅使用 time 类型 dimension；subqueryJoins 和 joinHints 仅在元数据明确支持时使用。
+        发生 member not found 或查询校验错误时，重新获取元数据；复杂查询的预校验请使用原生 MCP 接入。
+
+        示例：
+
+        ```json
+
+        {
+          "measures": ["orders.count"],
+          "dimensions": ["orders.status"],
+          "segments": ["orders.completed"],
+          "filters": [
+            {
+              "member": "orders.status",
+              "operator": "equals",
+              "values": ["completed"]
+            }
+          ],
+          "timeDimensions": [
+            {
+              "dimension": "orders.createdAt",
+              "granularity": "month",
+              "dateRange": ["2025-01-01", "2025-12-31"]
+            }
+          ],
+          "order": {"orders.count": "desc"},
+          "limit": 20,
+          "offset": 0,
+          "total": false,
+          "timezone": "Asia/Shanghai"
+        }
+
+        ```
+    V1LoadResultData:
+      oneOf:
+        - $ref: "#/components/schemas/V1LoadResultDataRow"
+        - $ref: "#/components/schemas/V1LoadResultDataCompact"
+        - $ref: "#/components/schemas/V1LoadResultDataColumnar"
+      description: 查询结果行，键名为 Cube member 完整名称。
+    V1LoadResultAnnotation:
+      type: object
+      required:
+        - measures
+        - dimensions
+        - segments
+        - timeDimensions
+      properties:
+        measures:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/V1LoadResultMemberAnnotation"
+          description: 指标注释映射。
+        dimensions:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/V1LoadResultMemberAnnotation"
+          description: 维度注释映射。
+        segments:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/V1LoadResultMemberAnnotation"
+          description: 筛选段注释映射。
+        timeDimensions:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/V1LoadResultMemberAnnotation"
+          description: 时间维度注释映射。
+      description: 查询结果中 measures、dimensions、segments 和 timeDimensions 的注释映射。
+    V1LoadResult:
+      type: object
+      required:
+        - annotation
+        - data
+      additionalProperties: true
+      properties:
+        query:
+          oneOf:
+            - $ref: "#/components/schemas/V1LoadRequestQuery"
+            - type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/V1LoadRequestQuery"
+          description: 服务端实际执行的查询对象或对象数组。
+        dataSource:
+          type: string
+          description: 数据源名称。
+        dbType:
+          type: string
+          description: 实际使用的数据源数据库类型。
+        extDbType:
+          type: string
+          description: Cube 外部查询引擎或扩展数据源类型。
+        external:
+          type: boolean
+          description: 是否使用外部查询执行。
+        slowQuery:
+          type: boolean
+          description: 该子查询是否被 Cube 标记为慢查询。
+        annotation:
+          $ref: "#/components/schemas/V1LoadResultAnnotation"
+        data:
+          $ref: "#/components/schemas/V1LoadResultData"
+        usedPreAggregations:
+          type: object
+          additionalProperties: true
+          description: 使用的预聚合信息（如果 Cube 返回）。
+        refreshKeyValues:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: 刷新键值。
+        lastRefreshTime:
+          type: string
+          format: date-time
+      description: 单个 Cube 查询结果。
+    V1CubeMetaFormat:
+      description: Measure 或 dimension 的格式定义。
+      oneOf:
+        - $ref: "#/components/schemas/V1CubeMetaSimpleFormat"
+        - $ref: "#/components/schemas/V1CubeMetaLinkFormat"
+        - $ref: "#/components/schemas/V1CubeMetaCustomTimeFormat"
+        - $ref: "#/components/schemas/V1CubeMetaCustomNumericFormat"
+    V1CubeMetaFormatDescription:
+      type: object
+      required:
+        - name
+        - specifier
+      properties:
+        name:
+          type: string
+          description: 格式名称。
+        specifier:
+          type: string
+          description: 格式化规则或说明符。
+        currency:
+          type: string
+          description: 货币代码。
+      description: Cube 成员格式的详细参数。
+    V1CubeMetaDimensionGranularity:
+      type: object
+      required:
+        - name
+        - title
+      properties:
+        name:
+          type: string
+          description: 粒度名称。
+        title:
+          type: string
+          description: 粒度展示名称。
+        interval:
+          type: string
+          description: 时间间隔。
+        sql:
+          type: string
+          description: 底层 SQL 表达式。
+        offset:
+          type: string
+          description: 时间偏移量。
+        origin:
+          type: string
+          description: 时间起点。
+      description: 时间粒度定义，包含名称、展示标题及底层时间范围信息。
+    V1CubeMetaDimensionOrder:
+      type: string
+      enum:
+        - asc
+        - desc
+      description: 维度默认排序方向。
+    V1LoadRequestQueryFilterItem:
+      oneOf:
+        - $ref: "#/components/schemas/V1LoadRequestQueryFilterBase"
+        - $ref: "#/components/schemas/V1LoadRequestQueryFilterLogicalOr"
+        - $ref: "#/components/schemas/V1LoadRequestQueryFilterLogicalAnd"
+      description: 单个过滤条件，或由 and/or 组成的逻辑过滤组。
+    V1LoadRequestQueryTimeDimension:
+      type: object
+      required:
+        - dimension
+      properties:
+        dimension:
+          type: string
+          minLength: 1
+          description: 必须使用 cube_meta_detail 返回的 time 类型 dimension member，原样复制且大小写敏感。
+        granularity:
+          type: string
+          description: 时间粒度，例如 day、week、month、quarter 或 year。
+        dateRange:
+          description: 时间范围，例如 ["2025-01-01", "2025-12-31"]，也可以使用相对日期字符串。
+          oneOf:
+            - type: string
+            - type: array
+              minItems: 1
+              maxItems: 2
+              items:
+                type: string
+        compareDateRange:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: array
+                minItems: 1
+                maxItems: 2
+                items:
+                  type: string
+          description: 用于对比的第二个时间范围。
+      description: 时间维度过滤条件。dimension 必须是元数据中 type 为 time 的完整 member。
+    V1LoadRequestQueryJoinSubquery:
+      type: object
+      required:
+        - sql
+        - on
+        - joinType
+        - alias
+      properties:
+        sql:
+          type: string
+          description: 子查询 SQL。
+        on:
+          type: string
+          description: 子查询与主查询的关联条件。
+        joinType:
+          type: string
+          description: 关联类型，例如 left 或 inner。
+        alias:
+          type: string
+          description: 子查询别名。
+      description: 查询中的子查询关联定义，仅在确有 Cube 关联需求时使用。
+    V1LoadRequestJoinHint:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+        type: string
+      description: Cube 关联提示，数组中依次填写关联 member 对。
+    V1LoadResultDataRow:
+      type: array
+      items:
+        type: object
+        additionalProperties: true
+      description: 默认结果格式：由对象组成的数据行数组。
+    V1LoadResultDataCompact:
+      type: object
+      required:
+        - members
+        - dataset
+      properties:
+        members:
+          type: array
+          items:
+            type: string
+          description: 数据列对应的完整 member 名称列表。
+        dataset:
+          type: array
+          items:
+            type: array
+            items: {}
+          description: 按行排列、按 members 顺序对应的数据值。
+      description: compact 结果格式：members 保存列名，dataset 保存按列顺序排列的数据。
+    V1LoadResultDataColumnar:
+      type: object
+      required:
+        - members
+        - columns
+      properties:
+        members:
+          type: array
+          items:
+            type: string
+          description: 数据列对应的完整 member 名称列表。
+        columns:
+          type: array
+          items:
+            type: array
+            items: {}
+          description: 按列排列、按 members 顺序对应的数据值。
+      description: columnar 结果格式：members 保存列名，columns 保存按列组织的数据。
+    V1LoadResultMemberAnnotation:
+      type: object
+      properties:
+        title:
+          type: string
+          description: member 展示名称。
+        shortTitle:
+          type: string
+          description: member 短名称。
+        description:
+          type: string
+          description: member 描述。
+        type:
+          type: string
+          description: member 数据类型。
+        drillMembers:
+          type: array
+          items:
+            type: string
+          description: 可下钻 member 列表。
+      description: 查询结果中单个 member 的展示和类型注释。
+    V1CubeMetaSimpleFormat:
+      type: string
+      enum:
+        - percent
+        - currency
+        - number
+        - imageUrl
+        - id
+        - link
+      description: Cube 成员的预置展示格式名称。
+    V1CubeMetaLinkFormat:
+      type: object
+      required:
+        - label
+        - type
+      properties:
+        label:
+          type: string
+        type:
+          type: string
+          enum:
+            - link
+      description: Cube 成员的链接展示格式。
+    V1CubeMetaCustomTimeFormat:
+      type: object
+      required:
+        - type
+        - value
+      properties:
+        type:
+          type: string
+          enum:
+            - custom-time
+        value:
+          type: string
+      description: Cube 成员的自定义时间展示格式。
+    V1CubeMetaCustomNumericFormat:
+      type: object
+      required:
+        - type
+        - value
+      properties:
+        type:
+          type: string
+          enum:
+            - custom-numeric
+        value:
+          type: string
+        alias:
+          type: string
+      description: Cube 成员的自定义数值展示格式。
+    V1LoadRequestQueryFilterBase:
+      type: object
+      required:
+        - member
+        - operator
+      properties:
+        member:
+          type: string
+          minLength: 1
+          description: 完整的 Cube member 名称，必须原样复制自 cube_meta_detail 返回的 measures、dimensions
+            或 segments；大小写敏感，禁止根据中文含义猜测或改写为 snake_case。
+        operator:
+          type: string
+          enum:
+            - equals
+            - notEquals
+            - contains
+            - notContains
+            - startsWith
+            - notStartsWith
+            - endsWith
+            - notEndsWith
+            - gt
+            - gte
+            - lt
+            - lte
+            - set
+            - notSet
+            - inDateRange
+            - notInDateRange
+            - beforeDate
+            - beforeOrOnDate
+            - afterDate
+            - afterOrOnDate
+            - measureFilter
+          description: Cube 过滤操作符，必须根据 member 类型选择。
+        values:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 过滤值数组；set、notSet 和 measureFilter 可以省略。
+      description: 单个 Cube 过滤条件。
+    V1LoadRequestQueryFilterLogicalOr:
+      type: object
+      required:
+        - or
+      properties:
+        or:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1LoadRequestQueryFilterItem"
+          description: 满足其中任一项即可的过滤条件列表。
+      description: 多个过滤条件的逻辑 OR 组合。
+    V1LoadRequestQueryFilterLogicalAnd:
+      type: object
+      required:
+        - and
+      properties:
+        and:
+          type: array
+          items:
+            $ref: "#/components/schemas/V1LoadRequestQueryFilterItem"
+          description: 必须同时满足的过滤条件列表。
+      description: 多个过滤条件的逻辑 AND 组合。

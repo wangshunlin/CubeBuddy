@@ -1,0 +1,38 @@
+{
+  "name": "cube-console",
+  "version": "1.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Cube semantic layer configuration console",
+  "main": "server/server.js",
+  "scripts": {
+    "build:mcp": "tsc -p tsconfig.mcp.json",
+    "start": "npm run build:mcp && node server/server.js",
+    "check": "npm run build:mcp && node --check server/server.js && node --check server/lib/cube-tools.js && node --check public/app.js",
+    "test": "npm run check && npm run test:mcp && npm run validate:openapi && npm run check:release && npm run check:public",
+    "test:mcp": "npm run build:mcp && node --test test/mcp/*.test.mjs",
+    "test:mcp:e2e": "node scripts/test-mcp-e2e.mjs",
+    "benchmark:mcp-db": "node scripts/benchmark-mcp-vs-db.mjs",
+    "report:mcp-db": "node scripts/render-benchmark-report.mjs",
+    "validate:openapi": "node scripts/validate-openapi.mjs",
+    "check:release": "node scripts/check-release-config.mjs",
+    "check:public": "node scripts/check-public-release.mjs",
+    "release:manifest": "node scripts/release-manifest.mjs",
+    "deploy:aliyun": "bash scripts/deploy-aliyun.sh",
+    "rollback:aliyun": "bash scripts/rollback-aliyun.sh"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "26.4.0",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@cubejs-backend/schema-compiler": "^1.6.72",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "mysql2": "3.24.4",
+    "yaml": "2.9.0",
+    "zod": "4.2.0"
+  }
+}
