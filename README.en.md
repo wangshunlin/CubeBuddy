@@ -65,7 +65,7 @@ Cube Core.
 
 MCP is part of the architecture because it is CubeBuddy's primary runtime interface for AI clients, not an auxiliary documentation format. The Gateway exposes `18080` for MCP, Cube APIs, and OpenAPI, and `18081` for the admin console by default.
 
-## Quick start
+## First deployment and sign-in
 
 ### Requirements
 
@@ -80,26 +80,34 @@ Docker-only deployment does not require Node.js on the host. Local development r
 ### 1. Clone
 
 ~~~bash
-git clone https://github.com/wangshunlin/cubebuddy.git
-cd cubebuddy
+git clone https://github.com/wangshunlin/CubeBuddy.git
+cd CubeBuddy
 ~~~
 
 The project is still a community preview. Once stable Releases are available, production deployments should pin a Release tag. Until then, pin a tested commit SHA.
 
-### 2. Configure
+### 2. Configure and create the first admin token
 
 ~~~bash
 cp .env.example .env
 chmod 600 .env
 ~~~
 
-Set at least these values in `.env`:
+The admin token is not a project-supplied default password: the deployer creates it. Generate two independent random values first. **Keep the first value safe**; it is the token used to sign in to the console for the first time.
+
+~~~bash
+ADMIN_TOKEN="$(openssl rand -hex 32)"
+CUBE_SECRET="$(openssl rand -hex 32)"
+printf 'Admin token (for first sign-in): %s\nCube signing secret: %s\n' "$ADMIN_TOKEN" "$CUBE_SECRET"
+~~~
+
+Set at least these values in `.env`, replacing the angle-bracket placeholders with the values printed above:
 
 ~~~env
 CUBE_PUBLIC_BASE=http://127.0.0.1:18080
 CONSOLE_PUBLIC_BASE=http://127.0.0.1:18081
-CUBE_UI_ADMIN_TOKEN=replace-with-a-random-admin-token
-CUBEJS_API_SECRET=replace-with-a-random-long-secret
+CUBE_UI_ADMIN_TOKEN=<value of ADMIN_TOKEN>
+CUBEJS_API_SECRET=<value of CUBE_SECRET>
 
 CUBEJS_DB_TYPE=mysql
 CUBEJS_DB_HOST=database-host
@@ -109,9 +117,9 @@ CUBEJS_DB_USER=database-user
 CUBEJS_DB_PASS=database-password
 ~~~
 
-You can run `openssl rand -hex 32` twice to generate two independent secrets. Do not reuse the examples.
+Never commit `.env` or share `CUBE_UI_ADMIN_TOKEN` and `CUBEJS_API_SECRET`. You may leave the database values empty for the initial start and configure a data source later in the console.
 
-### 3. Start
+### 3. Start and verify
 
 ~~~bash
 mkdir -p state/schema state/modules state/glossary state/openapi
@@ -121,8 +129,8 @@ docker compose -f compose.yml -f compose.build.yml --env-file .env up -d --build
 Inspect the deployment:
 
 ~~~bash
-docker compose --env-file .env ps
-docker compose --env-file .env logs -f cube_console
+docker compose -f compose.yml -f compose.build.yml --env-file .env ps
+docker compose -f compose.yml -f compose.build.yml --env-file .env logs -f cube_console
 ~~~
 
 Default endpoints:
@@ -134,6 +142,31 @@ Default endpoints:
 | OpenAPI | `http://127.0.0.1:18080/openapi.yaml` |
 | Gateway health | `http://127.0.0.1:18080/gateway-healthz` |
 | Cube readiness | `http://127.0.0.1:18080/readyz` |
+
+Continue once `gateway-healthz` succeeds and both `cube_console` and `cube_api` are running. When connecting from another machine, replace `127.0.0.1` with the deployment host. Use an HTTPS domain for public deployments; see [Production security](#production-security).
+
+### 4. Sign in for the first time
+
+Open `http://deployment-host:18081` and enter the **`ADMIN_TOKEN` value** generated in step 2—the value assigned to `CUBE_UI_ADMIN_TOKEN` in `.env`. This token protects the console and `/api/*` administration APIs; it is not an MCP service key.
+
+If the token is lost, set a new `CUBE_UI_ADMIN_TOKEN` in `.env`, then recreate the console container:
+
+~~~bash
+docker compose -f compose.yml -f compose.build.yml --env-file .env up -d --force-recreate cube_console
+~~~
+
+The prior admin token stops working immediately. Do not rotate `CUBEJS_API_SECRET` merely to recover the admin token: rotating it invalidates issued MCP/Cube JWTs.
+
+### 5. Complete the first business configuration
+
+After sign-in, use this minimum sequence:
+
+1. Under **Data sources**, test and save a database connection. Apply least privilege and prefer a read-only production account.
+2. Under **Semantic models**, create or import YAML, then validate and apply it.
+3. Under **Business terms**, import terms and aliases when needed.
+4. To serve AI clients, go to **System → MCP Management**, create an MCP Server, bind semantic models, and issue a dedicated service key.
+
+Each MCP service key is shown in full only at issuance. Save it immediately in the caller's controlled secret store; revoke and reissue it when necessary.
 
 ## Configuration and state
 
@@ -215,7 +248,16 @@ The full service token is returned only when issued; the server persists its dig
 ## Production security
 
 - Public deployments must use HTTPS. Plain HTTP with an IP address is appropriate only on a trusted, isolated network.
-- Explicitly set `MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS`.
+- For public deployments, set external URLs and MCP allowlists to your own domains, for example:
+
+  ~~~env
+  CUBE_PUBLIC_BASE=https://cube.example.com
+  CONSOLE_PUBLIC_BASE=https://console.example.com
+  MCP_ALLOWED_HOSTS=cube.example.com
+  MCP_ALLOWED_ORIGINS=chatgpt.com,claude.ai
+  ~~~
+
+  The domains are illustrative; adapt them to the actual reverse proxy and client origins. Do not retain public hostnames that are not required in `MCP_ALLOWED_HOSTS`.
 - Expose only the Gateway; do not map container ports `4000` or `4010` directly.
 - The console can access the Docker Socket, which grants powerful host capabilities. Restrict network access to port `18081` and never share the admin token with untrusted users.
 - Follow least privilege for database users; prefer a read-only account in production.

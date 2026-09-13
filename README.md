@@ -64,7 +64,7 @@ CubeBuddy 接管的 Cube API 路径直接转发给 Cube Core。
 
 MCP 位于架构图中，因为它不是附属文档格式，而是 CubeBuddy 面向 AI 客户端的主要运行时接口。Gateway 默认暴露 `18080`（MCP、Cube API、OpenAPI）和 `18081`（配置台）。
 
-## 快速开始
+## 首次部署与首次登录
 
 ### 前置条件
 
@@ -79,26 +79,34 @@ MCP 位于架构图中，因为它不是附属文档格式，而是 CubeBuddy �
 ### 1. 获取代码
 
 ~~~bash
-git clone https://github.com/wangshunlin/cubebuddy.git
-cd cubebuddy
+git clone https://github.com/wangshunlin/CubeBuddy.git
+cd CubeBuddy
 ~~~
 
 当前仍处于社区预览阶段。正式 Release 发布后，生产环境应检出明确的 Release Tag；在此之前请使用经过测试的 Commit SHA。
 
-### 2. 创建配置
+### 2. 创建配置并生成首次登录令牌
 
 ~~~bash
 cp .env.example .env
 chmod 600 .env
 ~~~
 
-编辑 `.env`，至少设置：
+管理员令牌不是项目提供的默认密码，而是由部署者自行创建。先生成两个彼此独立的随机值；**妥善保存第一个值**，它就是首次登录配置台时要输入的管理员令牌。
+
+~~~bash
+ADMIN_TOKEN="$(openssl rand -hex 32)"
+CUBE_SECRET="$(openssl rand -hex 32)"
+printf '管理员令牌（首次登录使用）：%s\nCube 签名密钥：%s\n' "$ADMIN_TOKEN" "$CUBE_SECRET"
+~~~
+
+编辑 `.env`，至少设置（将下方尖括号内容替换为上一步输出的实际值）：
 
 ~~~env
 CUBE_PUBLIC_BASE=http://127.0.0.1:18080
 CONSOLE_PUBLIC_BASE=http://127.0.0.1:18081
-CUBE_UI_ADMIN_TOKEN=请替换为随机管理令牌
-CUBEJS_API_SECRET=请替换为随机长密钥
+CUBE_UI_ADMIN_TOKEN=<ADMIN_TOKEN 的值>
+CUBEJS_API_SECRET=<CUBE_SECRET 的值>
 
 CUBEJS_DB_TYPE=mysql
 CUBEJS_DB_HOST=数据库地址
@@ -108,9 +116,9 @@ CUBEJS_DB_USER=数据库用户
 CUBEJS_DB_PASS=数据库密码
 ~~~
 
-可以使用 `openssl rand -hex 32` 分别生成两个独立密钥。不要复用示例值。
+不要提交 `.env`，不要把 `CUBE_UI_ADMIN_TOKEN` 或 `CUBEJS_API_SECRET` 发给他人。首次部署也可以暂时不填数据库信息，随后在配置台的“数据源”页面配置。
 
-### 3. 启动
+### 3. 启动并验证
 
 ~~~bash
 mkdir -p state/schema state/modules state/glossary state/openapi
@@ -120,8 +128,8 @@ docker compose -f compose.yml -f compose.build.yml --env-file .env up -d --build
 查看状态：
 
 ~~~bash
-docker compose --env-file .env ps
-docker compose --env-file .env logs -f cube_console
+docker compose -f compose.yml -f compose.build.yml --env-file .env ps
+docker compose -f compose.yml -f compose.build.yml --env-file .env logs -f cube_console
 ~~~
 
 默认地址：
@@ -133,6 +141,31 @@ docker compose --env-file .env logs -f cube_console
 | OpenAPI | `http://127.0.0.1:18080/openapi.yaml` |
 | Gateway 健康检查 | `http://127.0.0.1:18080/gateway-healthz` |
 | Cube 就绪检查 | `http://127.0.0.1:18080/readyz` |
+
+`gateway-healthz` 返回成功且 `cube_console`、`cube_api` 处于运行状态后，再继续登录。若从另一台机器访问，请将 `127.0.0.1` 替换为部署机地址；公网场景请使用 HTTPS 域名，见[生产部署安全](#生产部署安全)。
+
+### 4. 首次登录配置台
+
+打开 `http://部署机地址:18081`，在登录页输入第 2 步生成的 **`ADMIN_TOKEN` 值**（也就是 `.env` 中的 `CUBE_UI_ADMIN_TOKEN`）。该令牌用于配置台和 `/api/*` 管理接口，不是 MCP 客户端使用的服务密钥。
+
+令牌丢失时，在 `.env` 中设置一个新的 `CUBE_UI_ADMIN_TOKEN`，然后重建配置台容器：
+
+~~~bash
+docker compose -f compose.yml -f compose.build.yml --env-file .env up -d --force-recreate cube_console
+~~~
+
+旧管理员令牌会立即失效。不要为了找回令牌而修改 `CUBEJS_API_SECRET`；轮换后者会使已签发的 MCP/Cube JWT 失效。
+
+### 5. 完成首次业务配置
+
+登录后按以下顺序完成最小可用配置：
+
+1. 在“数据源”中测试并保存数据库连接；生产数据库账号应遵循最小权限，优先使用只读账号。
+2. 在“语义模型”中创建或导入 YAML，并执行校验和应用。
+3. 在“业务术语”中按需导入术语和别名。
+4. 如需供 AI 客户端调用，在“系统 → MCP 管理”创建 MCP Server、绑定语义模型，并签发专属服务密钥。
+
+每个 MCP 服务密钥只在签发时完整显示，请立刻保存到调用方的受控密钥库；需要时可撤销并重新签发。
 
 ## 配置与状态
 
@@ -214,7 +247,16 @@ http://部署机IP:18080/openapi.yaml
 ## 生产部署安全
 
 - 公网部署必须使用 HTTPS；IP + HTTP 仅适用于受信任的隔离网络。
-- 显式设置 `MCP_ALLOWED_HOSTS` 和 `MCP_ALLOWED_ORIGINS`。
+- 公网部署应将对外地址和 MCP 白名单改为自己的域名，例如：
+
+  ~~~env
+  CUBE_PUBLIC_BASE=https://cube.example.com
+  CONSOLE_PUBLIC_BASE=https://console.example.com
+  MCP_ALLOWED_HOSTS=cube.example.com
+  MCP_ALLOWED_ORIGINS=chatgpt.com,claude.ai
+  ~~~
+
+  示例域名仅作说明；按实际反向代理和客户端来源调整。`MCP_ALLOWED_HOSTS` 不应保留不需要的公共主机名。
 - 只通过 Gateway 暴露服务，不直接映射容器的 `4000` 或 `4010`。
 - 配置台可以访问 Docker Socket，相当于拥有很高的宿主机权限。应限制 `18081` 的网络访问，并避免向不受信任用户开放管理令牌。
 - 数据库账号遵循最小权限原则，生产环境优先使用只读账号。
