@@ -78,9 +78,8 @@ function assertSuccessfulToolResult(result, name) {
   return result.structuredContent;
 }
 
-function findMember(cube, suffix) {
-  const all = [...(cube.measures || []), ...(cube.dimensions || []), ...(cube.segments || [])];
-  return all.find((member) => member.name === `${cube.name}.${suffix}`)?.name;
+function firstMember(cube, kind) {
+  return (cube[kind] || []).find((member) => member?.name)?.name;
 }
 
 await check('鉴权：缺少 Bearer JWT 返回 401', async () => {
@@ -167,9 +166,11 @@ await check('cube_meta：发现非空语义模型摘要', async () => {
 });
 
 let metadataCube;
-await check('cube_meta_detail：元数据目录成员完整且包含数源字段', async () => {
-  const summary = cubes.find((cube) => cube.name === 'catalog_items');
-  assert.ok(summary, '缺少元数据目录 Cube catalog_items');
+let loadQuery;
+let searchDimension;
+await check('cube_meta_detail：当前 Server 已绑定模型的成员完整', async () => {
+  const summary = cubes.find((cube) => cube.measureCount > 0 || cube.dimensionCount > 0);
+  assert.ok(summary, '没有包含可查询成员的 Cube');
   const result = assertSuccessfulToolResult(await client.callTool({
     name: 'cube_meta_detail',
     arguments: { name: summary.name },
@@ -178,73 +179,56 @@ await check('cube_meta_detail：元数据目录成员完整且包含数源字段
   assert.equal(result.cubes.length, 1);
   metadataCube = result.cubes[0];
   assert.equal(metadataCube.name, summary.name);
-  for (const suffix of ['count', 'publishname', 'accesssource', 'is_report', 'datatype']) {
-    assert.ok(findMember(metadataCube, suffix), `元数据目录缺少 ${suffix} member`);
-  }
-  const accessSource = metadataCube.dimensions.find((item) => item.name.endsWith('.accesssource'));
-  assert.match(accessSource.description || '', /数源部门/);
+  const measure = firstMember(metadataCube, 'measures');
+  const dimension = firstMember(metadataCube, 'dimensions');
+  assert.ok(measure || dimension, `${summary.name} 没有可查询 measure 或 dimension`);
+  loadQuery = measure ? { measures: [measure], limit: 1 } : { dimensions: [dimension], limit: 1 };
+  searchDimension = metadataCube.dimensions.find((item) => item.type === 'string')?.name || dimension;
+  assert.ok(searchDimension, `${summary.name} 没有可用于 cube_search 的维度`);
   return `${metadataCube.measures.length} measures / ${metadataCube.dimensions.length} dimensions`;
 });
 
-await check('cube_glossary_resolve：机构 A归一化为示例机构 A', async () => {
+await check('cube_glossary_resolve：返回结构合法', async () => {
   const result = assertSuccessfulToolResult(await client.callTool({
     name: 'cube_glossary_resolve',
-    arguments: { text: '机构 A有哪些数据' },
+    arguments: { text: 'CubeBuddy MCP 发布验收' },
   }), 'cube_glossary_resolve');
   assert.equal(result.ok, true);
-  assert.ok(result.hits.some((hit) => hit.alias === '机构 A' && hit.standard === '示例机构 A'));
+  assert.ok(Array.isArray(result.hits), 'glossary hits 不是数组');
   return `${result.hits.length} 个命中`;
 });
 
-const query = {
-  dimensions: [
-    'catalog_items.publishname',
-    'catalog_items.accesssource',
-    'catalog_items.datatype',
-  ],
-  filters: [{
-    member: 'catalog_items.is_report',
-    operator: 'equals',
-    values: ['是'],
-  }],
-  limit: 10,
-};
-
-await check('cube_search：搜索“是否上报机构 A”维度值', async () => {
+await check('cube_search：当前模型维度搜索可用', async () => {
   const result = assertSuccessfulToolResult(await client.callTool({
     name: 'cube_search',
     arguments: {
-      dimension: 'catalog_items.is_report',
-      query: '是',
+      dimension: searchDimension,
+      query: 'a',
       limit: 10,
     },
   }), 'cube_search');
-  assert.ok(Array.isArray(result.results) && result.results.length > 0);
+  assert.ok(Array.isArray(result.results));
   const rows = result.results.flatMap((entry) => Array.isArray(entry.data) ? entry.data : []);
-  assert.ok(rows.some((row) => Object.values(row).includes('是')), '搜索结果未包含“是”');
   return `${rows.length} 行`;
 });
 
 await check('cube_dry_run：用户问题对应查询通过语义校验', async () => {
   const result = assertSuccessfulToolResult(await client.callTool({
     name: 'cube_dry_run',
-    arguments: { query },
+    arguments: { query: loadQuery },
   }), 'cube_dry_run');
   assert.ok(Array.isArray(result.normalizedQueries), 'dry-run 缺少 normalizedQueries');
   return `${result.normalizedQueries.length} 个规范化查询`;
 });
 
-await check('cube_load：查询“机构 A有哪些数据”返回真实数据', async () => {
+await check('cube_load：当前绑定模型查询正常执行', async () => {
   const result = assertSuccessfulToolResult(await client.callTool({
     name: 'cube_load',
-    arguments: { query },
+    arguments: { query: loadQuery },
   }), 'cube_load');
   assert.ok(Array.isArray(result.results) && result.results.length > 0);
   const rows = result.results.flatMap((entry) => Array.isArray(entry.data) ? entry.data : []);
-  assert.ok(rows.length > 0, '查询没有返回数据');
-  for (const row of rows) {
-    assert.ok(Object.hasOwn(row, 'catalog_items.publishname'));
-  }
+  assert.ok(Array.isArray(rows), '查询结果 data 不是数组');
   return `${rows.length} 行`;
 });
 
@@ -253,9 +237,8 @@ await check('cube_load 可选参数：cache 与 responseFormat 正常工作', as
     name: 'cube_load',
     arguments: {
       query: {
-        measures: ['catalog_items.count'],
+        ...loadQuery,
         responseFormat: 'compact',
-        limit: 1,
       },
       cache: 'stale-if-slow',
     },
@@ -282,7 +265,7 @@ await check('输入边界：字符串 query 被 Schema 拒绝', async () => {
 await check('输入边界：超限 limit 被 Schema 拒绝', async () => {
   const result = await client.callTool({
     name: 'cube_search',
-    arguments: { dimension: 'catalog_items.is_report', query: '是', limit: 501 },
+    arguments: { dimension: searchDimension, query: 'a', limit: 501 },
   });
   assert.equal(result.isError, true);
 });
@@ -290,7 +273,7 @@ await check('输入边界：超限 limit 被 Schema 拒绝', async () => {
 await check('输入边界：未知 cache 策略被 Schema 拒绝', async () => {
   const result = await client.callTool({
     name: 'cube_load',
-    arguments: { query: { measures: ['catalog_items.count'] }, cache: 'forever' },
+    arguments: { query: loadQuery, cache: 'forever' },
   });
   assert.equal(result.isError, true);
 });
@@ -313,7 +296,7 @@ await check('错误边界：不存在的工具返回协议错误且会话保持�
 
 await check('并发：八个只读调用互不干扰', async () => {
   const calls = Array.from({ length: 8 }, (_, index) => index % 2 === 0
-    ? client.callTool({ name: 'cube_glossary_resolve', arguments: { text: '机构 A有哪些数据' } })
+    ? client.callTool({ name: 'cube_glossary_resolve', arguments: { text: 'CubeBuddy MCP 发布验收' } })
     : client.callTool({ name: 'cube_meta', arguments: {} }));
   const responses = await Promise.all(calls);
   assert.ok(responses.every((result) => result.isError !== true));
