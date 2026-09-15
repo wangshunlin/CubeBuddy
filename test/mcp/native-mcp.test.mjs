@@ -23,6 +23,14 @@ function fakeService() {
         const error = new Error('模拟 Cube 查询失败');
         error.code = 'cube_http_error';
         error.status = 400;
+        error.data = { stack: '/cube/node_modules/internal.ts:1', requestId: 'internal-request-id' };
+        throw error;
+      }
+      if (input.query.memberMissing === true) {
+        const error = new Error("'odsTableName' not found for path 'EmergencyEvents.odsTableName'");
+        error.code = 'cube_http_error';
+        error.status = 400;
+        error.data = { stack: '/cube/node_modules/internal.ts:1', requestId: 'internal-request-id' };
         throw error;
       }
       return {
@@ -275,8 +283,22 @@ test('invalid input is rejected and Cube errors remain valid MCP error results',
   const result = await client.callTool({ name: 'cube_load', arguments: { query: { fail: true } } });
   assert.equal(result.isError, true);
   assert.equal(result.structuredContent, undefined);
-  assert.match(result.content[0].text, /模拟 Cube 查询失败/);
+  assert.deepEqual(JSON.parse(result.content[0].text), {
+    error: 'Cube 查询被拒绝。请检查查询结构和语义成员后重试。',
+    status: 400,
+    code: 'cube_query_invalid',
+  });
+  assert.doesNotMatch(result.content[0].text, /stack|requestId|模拟 Cube 查询失败|\/cube\//i);
   assert.equal(fixture.audit.at(-1).errorCode, 'cube_http_error');
+
+  const missingMember = await client.callTool({ name: 'cube_load', arguments: { query: { memberMissing: true } } });
+  assert.equal(missingMember.isError, true);
+  assert.deepEqual(JSON.parse(missingMember.content[0].text), {
+    error: '语义成员不可用：EmergencyEvents.odsTableName。请重新调用 cube_meta_detail 获取当前可用成员。',
+    status: 400,
+    code: 'member_not_found',
+  });
+  assert.doesNotMatch(missingMember.content[0].text, /stack|requestId|\/cube\//i);
 });
 
 test('native MCP rejects missing tokens and insufficient scopes before protocol handling', async (t) => {

@@ -53,15 +53,44 @@ function success(value: unknown): CallToolResult {
 
 function failure(error: unknown): CallToolResult {
   const value = error as { message?: string; status?: number; code?: string; data?: unknown };
-  const payload = {
-    error: value?.message || String(error),
-    ...(value?.status ? { status: value.status } : {}),
-    ...(value?.code ? { code: value.code } : {}),
-    ...(value?.data !== undefined ? { details: value.data } : {}),
-  };
+  const message = String(value?.message || '');
+  const memberMatch = message.match(/'([^']+)' not found for path '([^']+)'/i);
+  let payload: { error: string; status?: number; code: string };
+
+  if (value?.code === 'cube_http_error' && memberMatch) {
+    payload = {
+      error: `语义成员不可用：${memberMatch[2]}。请重新调用 cube_meta_detail 获取当前可用成员。`,
+      status: value.status || 400,
+      code: 'member_not_found',
+    };
+  } else if (value?.code === 'cube_http_error') {
+    payload = {
+      error: 'Cube 查询被拒绝。请检查查询结构和语义成员后重试。',
+      status: value.status || 400,
+      code: 'cube_query_invalid',
+    };
+  } else if (value?.code === 'cube_unavailable') {
+    payload = {
+      error: 'Cube 服务暂时不可用，请稍后重试。',
+      status: value.status || 502,
+      code: 'cube_unavailable',
+    };
+  } else if (value?.code === 'model_not_allowed') {
+    payload = {
+      error: message || '当前 MCP Server 无权访问该语义模型。',
+      status: value.status || 403,
+      code: 'model_not_allowed',
+    };
+  } else {
+    payload = {
+      error: '工具调用失败，请检查输入后重试。',
+      ...(value?.status ? { status: value.status } : {}),
+      code: value?.code || 'mcp_tool_error',
+    };
+  }
   const text = JSON.stringify(payload);
   return {
-    content: [{ type: 'text', text: text.length > 8000 ? `${text.slice(0, 8000)}…` : text }],
+    content: [{ type: 'text', text }],
     isError: true,
   };
 }
@@ -79,7 +108,16 @@ async function runTool(
     audit?.({ tool: name, clientId: authInfo.clientId, ok: true, durationMs: Date.now() - startedAt });
     return success(output);
   } catch (error) {
-    const value = error as { code?: string };
+    const value = error as { code?: string; status?: number; message?: string; data?: unknown };
+    // 原始 Cube 错误仅保留在服务端日志，不能作为 MCP 工具输出透传给调用方。
+    console.error('MCP tool failure', {
+      tool: name,
+      clientId: authInfo?.clientId || 'anonymous',
+      code: value?.code,
+      status: value?.status,
+      message: value?.message || String(error),
+      details: value?.data,
+    });
     audit?.({
       tool: name,
       clientId: authInfo?.clientId || 'anonymous',
