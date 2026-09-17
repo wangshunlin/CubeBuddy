@@ -35,6 +35,9 @@ const ENV_PATH = path.join(DEPLOY_DIR, '.env');
 const SETTINGS_PATH = path.join(DEPLOY_DIR, 'console-settings.json');
 const CONSOLE_STATE_PATH = path.join(DEPLOY_DIR, '.cube-console-state.json');
 const TOKEN_REGISTRY_PATH = path.join(DEPLOY_DIR, 'jwt-token-registry.json');
+// MCP SDK 的 AuthInfo 要求 expiresAt；此值仅供当前请求的 SDK 上下文使用，
+// 不会写入 JWT，因此不会改变服务密钥的永久有效语义。
+const NON_EXPIRING_AUTH_INFO_EXPIRY = 253402300799; // 9999-12-31T23:59:59Z
 const nativeMcpCache = new Map();
 const modelApplyJobs = new Map();
 const MIME = {
@@ -394,7 +397,7 @@ function writeTokenRegistry(records) {
 function tokenRecordView(record) {
   const expiresAt = Date.parse(record.expiresAt || '');
   const { tokenHash, ...safe } = normalizeTokenRecord(record) || {};
-  return { ...safe, status: Number.isFinite(expiresAt) && expiresAt > Date.now() ? 'active' : 'expired' };
+  return { ...safe, status: !record?.expiresAt || (Number.isFinite(expiresAt) && expiresAt > Date.now()) ? 'active' : 'expired' };
 }
 
 function normalizeTokenRecord(record) {
@@ -417,7 +420,7 @@ function normalizeTokenRecord(record) {
   };
 }
 
-function createTokenRecord(token, days, context = {}) {
+function createTokenRecord(token, context = {}) {
   const createdAt = Date.now();
   const id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
   const tokenHash = sha256(token);
@@ -425,8 +428,8 @@ function createTokenRecord(token, days, context = {}) {
   return {
     id,
     createdAt: new Date(createdAt).toISOString(),
-    expiresAt: new Date(createdAt + days * 86400000).toISOString(),
-    days,
+    expiresAt: '',
+    days: 0,
     purpose: String(context.purpose || 'service-account'),
     prefix: `${token.slice(0, 18)}…`,
     fingerprint: tokenHash.slice(0, 16),
@@ -441,7 +444,7 @@ function tokenRecordActive(token) {
   const record = readTokenRegistry().find((item) => item.tokenHash === tokenHash);
   if (!record) return false;
   const expiresAt = Date.parse(record.expiresAt || '');
-  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+  return !record.expiresAt || (Number.isFinite(expiresAt) && expiresAt > Date.now());
 }
 
 function migrateTokenRegistry() {
@@ -501,7 +504,7 @@ function verifyMcpAccessToken(token, expectedServerId = 'default') {
     token,
     clientId: String(claims.sub || claims.u || sha256(token).slice(0, 16)),
     scopes,
-    expiresAt: Number(claims.exp),
+    expiresAt: Number.isFinite(Number(claims.exp)) ? Number(claims.exp) : NON_EXPIRING_AUTH_INFO_EXPIRY,
     extra: {
       purpose: String(claims.p?.purpose || 'service-account'),
       ...(claims.jti ? { jti: String(claims.jti) } : {}),
@@ -557,6 +560,10 @@ function mcpServerById(id) {
   return currentMcpServers().find((item) => item.id === id) || null;
 }
 
+function defaultMcpServer() {
+  return currentMcpServers().find((item) => item.isDefault) || null;
+}
+
 function mcpServerView(server) {
   const activeTokens = readTokenRegistry().filter((token) => token.mcpServerId === server.id && tokenRecordView(token).status === 'active').length;
   return { ...server, activeTokenCount: activeTokens };
@@ -566,16 +573,15 @@ function issueMcpToken(serverId, body = {}) {
   const server = mcpServerById(serverId);
   if (!server) throw new Error('MCP Server 不存在');
   if (!server.enabled) throw new Error('MCP Server 已停用，不能创建密钥');
-  const days = Math.min(3650, Math.max(1, parseInt(body.days, 10) || 30));
   const secret = envSecret();
   if (!secret) throw new Error('CUBEJS_API_SECRET 缺失，先到「数据源」页确认');
   const purpose = String(body.purpose || body.context?.purpose || 'service-account').trim().slice(0, 80) || 'service-account';
   const context = { service: true, purpose, mcpServerId: server.id };
   const jwtId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
-  const token = jwtlib.sign({ secret, days, context, audience: 'cube-mcp', scopes: ['cube:read'], jwtId });
-  const record = createTokenRecord(token, days, context);
+  const token = jwtlib.sign({ secret, context, audience: 'cube-mcp', scopes: ['cube:read'], jwtId });
+  const record = createTokenRecord(token, context);
   writeTokenRegistry([record, ...readTokenRegistry().filter((item) => item.id !== record.id)]);
-  return { ok: true, token, days, record: tokenRecordView(record) };
+  return { ok: true, token, record: tokenRecordView(record) };
 }
 
 function readSettings() {
@@ -678,7 +684,7 @@ async function runModelApplyJob(job) {
 async function cubeRequest(pathname, body) {
   const secret = envSecret();
   if (!secret) throw new Error('CUBEJS_API_SECRET 缺失');
-  const token = jwtlib.sign({ secret, days: 1, context: { service: true } });
+  const token = jwtlib.sign({ secret, context: { service: true } });
   const startedAt = Date.now();
   const response = await fetch(API_BASE + pathname, {
     method: 'POST',
@@ -1356,7 +1362,7 @@ async function handleApi(req, res, url) {
       },
       mcpServers: currentMcpServers().map((server) => ({
         ...mcpServerView(server),
-        endpoint: server.id === 'default' ? mcpEndpoint : `${mcpEndpoint}/${server.id}`,
+        endpoint: server.isDefault ? mcpEndpoint : `${mcpEndpoint}/${server.id}`,
       })),
       cube: {
         base: cubeBase,
@@ -1453,11 +1459,12 @@ const server = http.createServer((req, res) => {
     return sendJson(res, 200, { ok: true, service: 'cube-console-next' });
   }
 
-  // CubeBuddy 原生 MCP：/mcp 是 default 兼容入口，/mcp/:id 为独立 MCP Server。
+  // /mcp 是管理员指定的默认 Server 入口；/mcp/:id 为独立 MCP Server。
   const mcpRoute = url.pathname.match(/^\/mcp(?:\/([a-z][a-z0-9-]{0,62}))?\/?$/);
   if (mcpRoute) {
-    const serverId = mcpRoute[1] || 'default';
-    const mcpServer = mcpServerById(serverId);
+    const serverId = mcpRoute[1];
+    const mcpServer = serverId ? mcpServerById(serverId) : defaultMcpServer();
+    if (!serverId && !mcpServer) return sendJson(res, 404, { ok: false, error: 'MCP 默认 Server 未配置，请先创建或指定一个默认 MCP Server' });
     if (!mcpServer || !mcpServer.enabled) return sendJson(res, 404, { ok: false, error: 'MCP Server 不存在或已停用' });
     nativeMcpForServer(mcpServer).handle(req, res).catch((error) => {
       if (!res.headersSent) return sendJson(res, 500, { ok: false, error: 'MCP 请求处理失败' });

@@ -2,6 +2,17 @@
 
 本目录对应标准化后的 Cube Console 项目：根目录使用 `compose.yml`，运行时配置使用根目录 `.env`，运行状态使用 `state/`。当前默认 Cube Core 为 `cubejs/cube:v1.7.25`。
 
+## 在可联网的构建机生成离线包
+
+构建机须已启动 Docker。下列命令构建配置台与网关镜像，并将它们连同固定版本的 Cube Core 镜像、Compose 源码一起写入 `dist/cube-console-compose.tar.gz`：
+
+```bash
+bash scripts/package-compose.sh
+shasum -a 256 -c dist/cube-console-compose.tar.gz.sha256
+```
+
+如果配置台与网关镜像已经在本机存在，可用 `bash scripts/package-compose.sh --skip-build` 跳过构建。请上传 `.tar.gz` 和同名 `.sha256` 文件到内网服务器；`.env`、数据库密码和运行状态不会被打进包内。
+
 ## 文件
 
 - 源码包：源码、根目录 Compose、Gateway 配置和部署文档。
@@ -11,9 +22,10 @@
 ## 内网服务器部署
 
 ```bash
+shasum -a 256 -c cube-console-compose.tar.gz.sha256
 install -d -m 755 /opt/cube-console
-tar -xzf cube-console-source.tar.gz -C /opt/cube-console --strip-components=1
-docker load -i cube-platform-images.tar.gz
+tar -xzf cube-console-compose.tar.gz -C /opt/cube-console --strip-components=1 source
+docker load -i /opt/cube-console/cube-console-images.tar
 
 cd /opt/cube-console
 cp .env.example .env
@@ -37,7 +49,7 @@ chmod 600 .env
 mkdir -p /opt/cube-console/state/{schema,modules,glossary,openapi}
 touch /opt/cube-console/state/cube.py
 docker compose --env-file .env config --quiet
-docker compose --env-file .env up -d --no-build
+docker compose --env-file .env up -d --no-build --pull never
 docker compose ps
 ```
 

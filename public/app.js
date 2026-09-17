@@ -1356,7 +1356,7 @@ function openTokenCreateModal() {
       button.disabled = true;
       button.textContent = "创建中…";
       try {
-        const result = await realApi("/api/jwt", { method: "POST", body: JSON.stringify({ days: 30, purpose }) });
+        const result = await realApi("/api/jwt", { method: "POST", body: JSON.stringify({ purpose }) });
         // The API intentionally returns only token metadata when listing records.
         // Keep the full value locally while it is still available from creation so
         // the copy action continues to work after the modal is closed or refreshed.
@@ -1417,13 +1417,18 @@ function mcpServerModal(server = null) {
     confirm: editing ? "保存修改" : "创建 MCP Server",
     body: `<div class="grid cols-2"><label class="field">名称<input id="mcpServerName" maxlength="80" value="${escapeHtml(server?.name || "")}" placeholder="例如：销售分析 MCP"></label><label class="field">Server ID<input id="mcpServerId" maxlength="63" value="${escapeHtml(server?.id || "")}" placeholder="例如：sales-agent" ${editing ? "readonly" : ""}><small>用于生成 MCP Endpoint，创建后不可修改。</small></label><label class="field" style="grid-column:1/-1">说明（instructions）<textarea id="mcpServerInstructions" maxlength="2000" placeholder="例如：仅用于销售分析，先调用 cube_meta 获取可用模型。">${escapeHtml(server?.instructions || "")}</textarea><small>作为 MCP instructions 提供给 AI；实际访问权限仍由绑定语义模型控制。</small></label></div><div class="field" style="margin-top:18px"><span>绑定语义模型</span><div class="transfer-box"><section class="transfer-pane"><div class="transfer-pane-head"><strong>可选语义模型</strong><span id="mcpTransferAvailableCount"></span></div><div class="transfer-list" id="mcpTransferAvailable"></div></section><div class="transfer-actions"><button id="mcpTransferAdd" type="button" title="添加所选模型">→</button><button id="mcpTransferRemove" type="button" title="移除所选模型">←</button></div><section class="transfer-pane"><div class="transfer-pane-head"><strong>已绑定语义模型</strong><span id="mcpTransferSelectedCount"></span></div><div class="transfer-list" id="mcpTransferSelected"></div></section></div></div>`,
     afterOpen: () => {
+      const defaultField = document.createElement("label");
+      defaultField.className = "field checkbox-field";
+      defaultField.style.gridColumn = "1/-1";
+      defaultField.innerHTML = `<input id="mcpServerDefault" type="checkbox" ${server?.isDefault ? "checked" : ""}><span>设为默认 MCP Server（使用 <code>/mcp</code> 访问）</span><small>设置后会替换当前默认 Server；未设置默认 Server 时，<code>/mcp</code> 会返回明确的未配置提示。</small>`;
+      $("#mcpServerInstructions")?.closest(".grid")?.append(defaultField);
       renderTransfer();
       $("#mcpTransferAdd").onclick = () => { availableSelection.forEach((id) => selectedIds.add(id)); availableSelection.clear(); renderTransfer(); };
       $("#mcpTransferRemove").onclick = () => { selectedSelection.forEach((id) => selectedIds.delete(id)); selectedSelection.clear(); renderTransfer(); };
     },
     onConfirm: async () => {
       const modelIds = [...selectedIds];
-      const payload = { name: $("#mcpServerName").value.trim(), id: $("#mcpServerId").value.trim(), instructions: $("#mcpServerInstructions").value.trim(), modelIds };
+      const payload = { name: $("#mcpServerName").value.trim(), id: $("#mcpServerId").value.trim(), instructions: $("#mcpServerInstructions").value.trim(), isDefault: $("#mcpServerDefault").checked, modelIds };
       if (!payload.name || !payload.id || !modelIds.length) return toast("请填写名称、Server ID，并至少绑定一个语义模型");
       setModalBusy();
       try {
@@ -1445,7 +1450,7 @@ function openMcpTokenCreateModal(serverId) {
       const button = $("#modalConfirm"); button.disabled = true; button.textContent = "创建中…";
       try {
         const purpose = String($("#mcpTokenLabel")?.value || "service-account").trim() || "service-account";
-        const result = await realApi(`/api/mcp-servers/${encodeURIComponent(serverId)}/tokens`, { method: "POST", body: JSON.stringify({ days: 30, purpose }) });
+        const result = await realApi(`/api/mcp-servers/${encodeURIComponent(serverId)}/tokens`, { method: "POST", body: JSON.stringify({ purpose }) });
         saveLocalJwtToken(result.record, result.token);
         runtime.lastGeneratedToken = { id: result.record?.id || "", token: result.token, record: result.record || {} };
         runtime.jwtTokens = [result.record, ...(runtime.jwtTokens || []).filter((item) => item.id !== result.record?.id)];
@@ -1803,7 +1808,7 @@ function currentMcpServer() {
 
 function mcpEndpoint(server) {
   const base = String(runtime.info?.cube?.base || window.location.origin).replace(/\/+$/, "");
-  return server?.id === "default" ? `${base}/mcp` : `${base}/mcp/${server?.id || ""}`;
+  return server?.isDefault ? `${base}/mcp` : `${base}/mcp/${server?.id || ""}`;
 }
 
 function renderMcpManagement() {
@@ -1813,7 +1818,7 @@ function renderMcpManagement() {
   if (!["overview", "models", "tokens"].includes(state.mcpTab)) state.mcpTab = "overview";
   const selectedTokens = (runtime.jwtTokens || []).filter((token) => token.mcpServerId === selected?.id);
   const modelNames = new Map(models.map((model) => [model.id, model.name]));
-  const serverList = servers.map((server) => `<button class="model-item ${server.id === selected?.id ? "active" : ""}" data-action="select-mcp-server" data-mcp-server-id="${escapeHtml(server.id)}"><span><strong>${escapeHtml(server.name)}</strong><small>${escapeHtml(server.id)} · ${server.modelIds.length} 个语义模型</small></span>${server.enabled ? '<i class="status-dot applied"></i>' : '<i class="status-dot"></i>'}</button>`).join("");
+  const serverList = servers.map((server) => `<button class="model-item ${server.id === selected?.id ? "active" : ""}" data-action="select-mcp-server" data-mcp-server-id="${escapeHtml(server.id)}"><span><strong>${escapeHtml(server.name)}${server.isDefault ? ' <small>默认</small>' : ''}</strong><small>${escapeHtml(server.id)} · ${server.modelIds.length} 个语义模型</small></span>${server.enabled ? '<i class="status-dot applied"></i>' : '<i class="status-dot"></i>'}</button>`).join("");
   const pageActions = '<button class="btn" data-action="reveal-secret">JWT 签名设置</button><button class="btn primary" data-action="new-mcp-server">创建 MCP Server</button>';
   if (!selected) return pageHead("MCP 管理", "创建独立 MCP Server，并按语义模型授予只读查询权限。", pageActions) + '<section class="card empty-page"><div class="empty"><b>暂无 MCP Server</b><span>请先创建一个 MCP Server 并绑定至少一个已加载的语义模型。</span></div></section>';
   const tokens = selectedTokens.map((record) => `<tr><td><strong>${escapeHtml(record.purpose || "service-account")}</strong><small class="mono">${escapeHtml(tokenDisplayKey(record))}</small></td><td>${escapeHtml(tokenDate(record.createdAt))}</td><td>${badge(tokenStatusLabel(record.status))}</td><td><button class="link" data-action="copy-jwt-token" data-token-id="${escapeHtml(record.id)}">复制</button><button class="link danger" data-action="delete-mcp-token" data-mcp-server-id="${escapeHtml(selected.id)}" data-token-id="${escapeHtml(record.id)}">撤销</button></td></tr>`).join("") || '<tr><td colspan="4"><span class="muted">暂无服务密钥</span></td></tr>';
@@ -1825,7 +1830,8 @@ function renderMcpManagement() {
   const overview = `<div class="mcp-overview-grid"><section class="mcp-section"><div class="mcp-section-head"><h3>接入信息</h3>${badge(selected.enabled ? "正常" : "已停用")}</div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>Endpoint</span><code>${escapeHtml(mcpEndpoint(selected))}</code><button class="link" data-action="copy-mcp-endpoint" data-mcp-server-id="${escapeHtml(selected.id)}">复制</button></div><div class="mcp-endpoint-row"><span>Transport</span><code>streamable-http</code><span></span></div><div class="mcp-endpoint-row"><span>鉴权</span><code>Authorization: Bearer &lt;MCP Server JWT&gt;</code><span></span></div></div></section><section class="mcp-section"><div class="mcp-section-head"><h3>说明（instructions）</h3></div><div class="mcp-section-body mcp-instructions">${escapeHtml(selected.instructions || "仅使用 cube_meta 返回的语义模型和成员；禁止猜测成员名称。")}</div></section><section class="mcp-section" style="grid-column:1/-1"><div class="mcp-section-head"><h3>Server 设置</h3></div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>名称</span><strong>${escapeHtml(selected.name)}</strong><span></span></div><div class="mcp-endpoint-row"><span>Server ID</span><code>${escapeHtml(selected.id)}</code><span></span></div><div class="mcp-endpoint-row"><span>状态</span><span>${selected.enabled ? "已启用" : "已停用"}</span><span></span></div><div class="mcp-settings-actions"><button class="btn ${selected.enabled ? "" : "primary"}" data-action="toggle-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">${selected.enabled ? "停用 Server" : "启用 Server"}</button>${selected.id !== "default" ? `<button class="btn danger" data-action="delete-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">删除 MCP Server</button>` : ""}</div></div></section></div>`;
   const modelPanel = `<section class="mcp-section"><div class="mcp-section-head"><div><h3>绑定语义模型</h3></div><span class="muted">${selected.modelIds.length} 个</span></div><div class="mcp-section-body"><div class="mcp-model-grid">${modelCards}</div></div></section>`;
   const tokenPanel = `<section class="mcp-section"><div class="mcp-section-head"><h3>服务密钥</h3><button class="btn primary small" data-action="create-mcp-token" data-mcp-server-id="${escapeHtml(selected.id)}">创建密钥</button></div><div class="table-wrap"><table class="table"><thead><tr><th>备注</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${tokens}</tbody></table></div></section>`;
-  const panels = { overview, models: modelPanel, tokens: tokenPanel };
+  const defaultActions = `<section class="mcp-section"><div class="mcp-section-head"><h3>默认入口</h3></div><div class="mcp-section-body"><p class="muted">${selected.isDefault ? "当前 Server 接收 /mcp 请求。" : "当前 Server 使用独立地址；可将其设为 /mcp 默认入口。"}</p><div class="mcp-settings-actions">${selected.isDefault ? "" : `<button class="btn" data-action="set-default-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">设为默认 Server</button>`}<button class="btn danger" data-action="delete-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">删除 MCP Server</button></div></div></section>`;
+  const panels = { overview: overview + defaultActions, models: modelPanel, tokens: tokenPanel };
   return pageHead("MCP 管理", "每个 MCP Server 使用独立地址、独立密钥和语义模型白名单。", pageActions) +
     `<div class="model-workbench mcp-workbench"><aside class="model-browser"><div class="model-browser-head"><strong>MCP Server</strong><span class="muted">${servers.length}</span></div><div class="model-list">${serverList}</div></aside><div class="model-detail"><div class="model-titlebar mcp-detail-head"><div class="model-title"><span class="integration-icon">⌘</span><div><h2>${escapeHtml(selected.name)}</h2><p class="mono">${escapeHtml(selected.id)} · ${selected.modelIds.length} 个语义模型 · ${selectedTokens.filter((token) => token.status === "active").length} 个有效密钥</p></div></div><div class="actions"><button class="btn" data-action="edit-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">编辑</button>${badge(selected.enabled ? "正常" : "已停用")}</div></div><div class="tabs mcp-tabs">${[["overview", "概览"], ["models", "语义模型"], ["tokens", "服务密钥"]].map(([id, label]) => `<button class="${state.mcpTab === id ? "active" : ""}" data-action="mcp-tab" data-mcp-tab="${id}">${label}</button>`).join("")}</div><div class="mcp-panel">${panels[state.mcpTab] || overview}</div></div></div>`;
 }
@@ -2452,6 +2458,12 @@ async function handleAction(action, element) {
       if (!server) return toast("MCP Server 不存在");
       await realApi(`/api/mcp-servers/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ enabled: !server.enabled }) });
       await loadRealData(); return toast(server.enabled ? "MCP Server 已停用" : "MCP Server 已启用");
+    }
+    if (action === "set-default-mcp-server") {
+      const id = element?.dataset.mcpServerId;
+      if (!id) return toast("MCP Server 不存在");
+      await realApi(`/api/mcp-servers/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ isDefault: true }) });
+      await loadRealData(); return toast("已设为默认 MCP Server");
     }
     if (action === "delete-mcp-server") {
       const id = element?.dataset.mcpServerId; const server = (runtime.mcpServers || []).find((item) => item.id === id);

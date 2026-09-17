@@ -7,7 +7,6 @@ const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 
 function sign({
   secret,
-  days = 30,
   user = 'service-account',
   context = { service: true },
   audience,
@@ -25,7 +24,6 @@ function sign({
     ...(Array.isArray(scopes) && scopes.length ? { scope: scopes.join(' ') } : {}),
     ...(jwtId ? { jti: jwtId } : {}),
     iat: now,
-    exp: now + days * 86400,
   });
   const sig = crypto.createHmac('sha256', secret)
     .update(`${header}.${payload}`)

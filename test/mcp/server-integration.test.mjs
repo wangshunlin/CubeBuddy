@@ -90,7 +90,11 @@ test('real CubeBuddy server issues, verifies and revokes native MCP tokens', asy
     body: JSON.stringify({ days: 1, purpose: 'native-mcp-integration' }),
   });
   assert.ok(issued.token);
+  const claims = JSON.parse(Buffer.from(issued.token.split('.')[1], 'base64url').toString('utf8'));
+  assert.equal(claims.exp, undefined, '新签发的 JWT 不应包含 exp');
   assert.equal(issued.record.purpose, 'native-mcp-integration');
+  assert.equal(issued.record.expiresAt, '');
+  assert.equal(issued.record.status, 'active');
   assert.equal(issued.record.token, undefined);
   assert.equal(issued.record.tokenHash, undefined);
 

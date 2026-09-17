@@ -33,6 +33,8 @@ function normalizeServer(input, { requiredId = true } = {}) {
   return {
     id,
     name: String(input.name || '').trim().slice(0, 80) || id,
+    // 旧配置中的 default Server 继续作为 /mcp 的默认入口。
+    isDefault: input.isDefault === true || (input.isDefault === undefined && id === 'default'),
     instructions: String(input.instructions || '').trim().slice(0, 2000),
     enabled: input.enabled !== false,
     modelIds,
@@ -58,6 +60,7 @@ function write(deployDir, servers) {
     if (ids.has(item.id)) throw new Error(`Server ID 已存在：${item.id}`);
     ids.add(item.id);
   });
+  if (normalized.filter((item) => item.isDefault).length > 1) throw new Error('只能设置一个默认 MCP Server');
   const target = configPath(deployDir);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.tmp`;
@@ -69,10 +72,11 @@ function write(deployDir, servers) {
 
 function ensureDefault(deployDir, modelIds) {
   const current = read(deployDir);
-  if (current.servers.length) return current;
+  // 仅首次启动时创建默认 Server。已有的空配置表示管理员已主动删除全部 Server。
+  if (fs.existsSync(configPath(deployDir))) return current;
   const ids = [...new Set((modelIds || []).map(String).filter(Boolean))];
   return write(deployDir, [{
-    id: 'default', name: '默认 MCP Server',
+    id: 'default', name: '默认 MCP Server', isDefault: true,
     instructions: '', enabled: true, modelIds: ids,
   }]);
 }
@@ -88,7 +92,10 @@ function create(deployDir, input, availableModelIds) {
   if (invalid.length) throw new Error(`语义模型不存在：${invalid.join('、')}`);
   const current = read(deployDir);
   if (current.servers.some((item) => item.id === next.id)) throw new Error('Server ID 已存在');
-  return write(deployDir, [...current.servers, next]).servers.find((item) => item.id === next.id);
+  const servers = next.isDefault
+    ? [...current.servers.map((item) => ({ ...item, isDefault: false })), next]
+    : [...current.servers, next];
+  return write(deployDir, servers).servers.find((item) => item.id === next.id);
 }
 
 function update(deployDir, id, patch, availableModelIds) {
@@ -99,12 +106,13 @@ function update(deployDir, id, patch, availableModelIds) {
   const allowed = new Set(availableModelIds || []);
   const invalid = next.modelIds.filter((modelId) => !allowed.has(modelId));
   if (invalid.length) throw new Error(`语义模型不存在：${invalid.join('、')}`);
-  current.servers[index] = next;
+  current.servers = next.isDefault
+    ? current.servers.map((item, itemIndex) => ({ ...(itemIndex === index ? next : item), isDefault: itemIndex === index }))
+    : current.servers.map((item, itemIndex) => itemIndex === index ? next : item);
   return write(deployDir, current.servers).servers[index];
 }
 
 function remove(deployDir, id) {
-  if (id === 'default') throw new Error('默认 MCP Server 不能删除，可停用或修改绑定模型');
   const current = read(deployDir);
   const next = current.servers.filter((item) => item.id !== id);
   if (next.length === current.servers.length) throw new Error('MCP Server 不存在');
