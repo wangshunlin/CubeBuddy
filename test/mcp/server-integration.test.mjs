@@ -186,3 +186,64 @@ test('MCP Server keys are bound to their own endpoint', async (t) => {
   );
   await wrongClient.close().catch(() => {});
 });
+
+test('default alias can be deleted, reassigned and still enforces server-scoped keys', async (t) => {
+  const fixture = await startCubeBuddy(async (dir) => {
+    await mkdir(path.join(dir, 'schema'), { recursive: true });
+    await writeFile(path.join(dir, 'schema', 'orders.yml'), 'cubes:\n - name: orders\n');
+  });
+  t.after(() => fixture.close());
+  const old = await adminRequest(fixture.endpoint, '/api/jwt', { method: 'POST', body: '{}' });
+  const blocked = await fetch(new URL('/api/mcp-servers/default', fixture.endpoint), { method: 'DELETE', headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
+  assert.equal(blocked.status, 409);
+  await adminRequest(fixture.endpoint, `/api/jwt/tokens/${old.record.id}`, { method: 'DELETE' });
+  await adminRequest(fixture.endpoint, '/api/mcp-servers/default', { method: 'DELETE' });
+  assert.deepEqual((await adminRequest(fixture.endpoint, '/api/mcp-servers')).servers, []);
+  const empty = await fetch(fixture.endpoint);
+  assert.equal(empty.status, 404);
+  assert.match((await empty.json()).error, /未配置/);
+  await adminRequest(fixture.endpoint, '/api/mcp-servers', { method: 'POST', body: JSON.stringify({ id: 'sales', modelIds: ['orders'], isDefault: true }) });
+  const issued = await adminRequest(fixture.endpoint, '/api/jwt', { method: 'POST', body: '{}' });
+  assert.equal(issued.record.mcpServerId, 'sales');
+  for (const url of [fixture.endpoint, new URL('/mcp/sales', fixture.endpoint)]) {
+    const client = new Client({ name: 'alias-test', version: '1' });
+    await client.connect(new StreamableHTTPClientTransport(url, { authProvider: { token: async () => issued.token } }));
+    assert.equal((await client.listTools()).tools.length, 6);
+    await client.close();
+  }
+});
+
+test('model transfer APIs require admin and save imported models as drafts', async (t) => {
+  const fixture = await startCubeBuddy();
+  t.after(() => fixture.close());
+  assert.equal((await fetch(new URL('/api/model-transfer/catalog', fixture.endpoint))).status, 401);
+  const upload = { name: 'orders.yml', data: Buffer.from('cubes:\n - name: orders\n').toString('base64') };
+  const preview = await adminRequest(fixture.endpoint, '/api/model-transfer/preview', { method: 'POST', body: JSON.stringify({ upload }) });
+  const result = await adminRequest(fixture.endpoint, '/api/model-transfer/import', { method: 'POST', body: JSON.stringify({ upload, mode: 'merge', revision: preview.revision }) });
+  assert.equal(result.imported, 1);
+  assert.deepEqual((await adminRequest(fixture.endpoint, '/api/model-transfer/catalog')).entries.map(item => item.id), ['orders']);
+  const state = JSON.parse(await readFile(path.join(fixture.deployDir, '.cube-console-state.json'), 'utf8'));
+  assert.deepEqual(state.pendingModels, ['orders.yml']);
+});
+
+test('model deletion requires explicit MCP detach confirmation', async (t) => {
+  const fixture = await startCubeBuddy(async (dir) => {
+    await mkdir(path.join(dir, 'schema'), { recursive: true });
+    await writeFile(path.join(dir, 'schema', 'orders.yml'), 'cubes:\n - name: orders\n');
+  });
+  t.after(() => fixture.close());
+  await adminRequest(fixture.endpoint, '/api/mcp-servers', {
+    method: 'POST', body: JSON.stringify({ id: 'orders-agent', modelIds: ['orders'] }),
+  });
+  const bindings = await adminRequest(fixture.endpoint, '/api/models/orders.yml/mcp-bindings');
+  assert.deepEqual(bindings.modelIds, ['orders']);
+  assert.deepEqual(bindings.servers.map(item => item.id), ['orders-agent']);
+  const response = await fetch(new URL('/api/models/orders.yml', fixture.endpoint), {
+    method: 'DELETE', headers: { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' }, body: '{}',
+  });
+  const blocked = await response.json();
+  assert.equal(response.status, 409);
+  assert.match(blocked.error, /解除绑定/);
+  assert.equal((await adminRequest(fixture.endpoint, '/api/mcp-servers/orders-agent')).server.modelIds[0], 'orders');
+  assert.match(await readFile(path.join(fixture.deployDir, 'schema', 'orders.yml'), 'utf8'), /orders/);
+});

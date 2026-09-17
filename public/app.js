@@ -1827,7 +1827,7 @@ function renderMcpManagement() {
     const source = modelData[id]?.form?.source || String(model?.source || "default").split(".")[0] || "default";
     return `<div class="mcp-model-card"><strong>${escapeHtml(modelNames.get(id) || id)}</strong><small class="mono">${escapeHtml(id)}</small><small>数据源：${escapeHtml(source)} · ${escapeHtml(model?.status || "未加载")}</small></div>`;
   }).join("") || '<div class="empty compact"><b>暂无绑定模型</b></div>';
-  const overview = `<div class="mcp-overview-grid"><section class="mcp-section"><div class="mcp-section-head"><h3>接入信息</h3>${badge(selected.enabled ? "正常" : "已停用")}</div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>Endpoint</span><code>${escapeHtml(mcpEndpoint(selected))}</code><button class="link" data-action="copy-mcp-endpoint" data-mcp-server-id="${escapeHtml(selected.id)}">复制</button></div><div class="mcp-endpoint-row"><span>Transport</span><code>streamable-http</code><span></span></div><div class="mcp-endpoint-row"><span>鉴权</span><code>Authorization: Bearer &lt;MCP Server JWT&gt;</code><span></span></div></div></section><section class="mcp-section"><div class="mcp-section-head"><h3>说明（instructions）</h3></div><div class="mcp-section-body mcp-instructions">${escapeHtml(selected.instructions || "仅使用 cube_meta 返回的语义模型和成员；禁止猜测成员名称。")}</div></section><section class="mcp-section" style="grid-column:1/-1"><div class="mcp-section-head"><h3>Server 设置</h3></div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>名称</span><strong>${escapeHtml(selected.name)}</strong><span></span></div><div class="mcp-endpoint-row"><span>Server ID</span><code>${escapeHtml(selected.id)}</code><span></span></div><div class="mcp-endpoint-row"><span>状态</span><span>${selected.enabled ? "已启用" : "已停用"}</span><span></span></div><div class="mcp-settings-actions"><button class="btn ${selected.enabled ? "" : "primary"}" data-action="toggle-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">${selected.enabled ? "停用 Server" : "启用 Server"}</button>${selected.id !== "default" ? `<button class="btn danger" data-action="delete-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">删除 MCP Server</button>` : ""}</div></div></section></div>`;
+  const overview = `<div class="mcp-overview-grid"><section class="mcp-section"><div class="mcp-section-head"><h3>接入信息</h3>${badge(selected.enabled ? "正常" : "已停用")}</div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>Endpoint</span><code>${escapeHtml(mcpEndpoint(selected))}</code><button class="link" data-action="copy-mcp-endpoint" data-mcp-server-id="${escapeHtml(selected.id)}">复制</button></div><div class="mcp-endpoint-row"><span>Transport</span><code>streamable-http</code><span></span></div><div class="mcp-endpoint-row"><span>鉴权</span><code>Authorization: Bearer &lt;MCP Server JWT&gt;</code><span></span></div></div></section><section class="mcp-section"><div class="mcp-section-head"><h3>说明（instructions）</h3></div><div class="mcp-section-body mcp-instructions">${escapeHtml(selected.instructions || "仅使用 cube_meta 返回的语义模型和成员；禁止猜测成员名称。")}</div></section><section class="mcp-section" style="grid-column:1/-1"><div class="mcp-section-head"><h3>Server 设置</h3></div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>名称</span><strong>${escapeHtml(selected.name)}</strong><span></span></div><div class="mcp-endpoint-row"><span>Server ID</span><code>${escapeHtml(selected.id)}</code><span></span></div><div class="mcp-endpoint-row"><span>状态</span><span>${selected.enabled ? "已启用" : "已停用"}</span><span></span></div><div class="mcp-settings-actions"><button class="btn ${selected.enabled ? "" : "primary"}" data-action="toggle-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">${selected.enabled ? "停用 Server" : "启用 Server"}</button></div></div></section></div>`;
   const modelPanel = `<section class="mcp-section"><div class="mcp-section-head"><div><h3>绑定语义模型</h3></div><span class="muted">${selected.modelIds.length} 个</span></div><div class="mcp-section-body"><div class="mcp-model-grid">${modelCards}</div></div></section>`;
   const tokenPanel = `<section class="mcp-section"><div class="mcp-section-head"><h3>服务密钥</h3><button class="btn primary small" data-action="create-mcp-token" data-mcp-server-id="${escapeHtml(selected.id)}">创建密钥</button></div><div class="table-wrap"><table class="table"><thead><tr><th>备注</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${tokens}</tbody></table></div></section>`;
   const defaultActions = `<section class="mcp-section"><div class="mcp-section-head"><h3>默认入口</h3></div><div class="mcp-section-body"><p class="muted">${selected.isDefault ? "当前 Server 接收 /mcp 请求。" : "当前 Server 使用独立地址；可将其设为 /mcp 默认入口。"}</p><div class="mcp-settings-actions">${selected.isDefault ? "" : `<button class="btn" data-action="set-default-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">设为默认 Server</button>`}<button class="btn danger" data-action="delete-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">删除 MCP Server</button></div></div></section>`;
@@ -2169,44 +2169,110 @@ async function watchModelApply(jobId, fallbackCount) {
   }
 }
 
-function previewModelImport(file) {
+async function previewModelImport(file) {
   if (!file) return;
-  const reader = new FileReader();
-  reader.onerror = () => toast("无法读取模型文件");
-  reader.onload = async () => {
-    const content = String(reader.result || "");
-    try {
-      const validation = await realApi("/api/model-doc/validate", { method: "POST", body: JSON.stringify({ content }) });
-      const cubeName = validation.cubes?.find(Boolean) || file.name.replace(/\.ya?ml$/i, "");
-      const name = modelImportName(cubeName, file.name);
-      openModal({
-        title: "导入语义模型",
-        sub: `${file.name} · ${validation.cubes?.length || 0} 个 Cube 定义`,
-        icon: "↑",
-        confirm: "保存模型",
-        body: `<div class="soft-box"><strong>YAML 校验通过</strong><p class="muted" style="margin:7px 0 0;line-height:1.7">将保存为 <span class="mono">${escapeHtml(name)}</span>。如果同名文件已存在，系统会先创建 .bak 备份；导入后需要在语义模型页继续检查并应用。</p></div>`,
-        onConfirm: async () => {
-          try {
-            await realApi("/api/model-doc", { method: "PUT", body: JSON.stringify({ name, content: validation.formatted || content, apply: false }) });
-            closeModal();
-            await loadRealData();
-            state.model = cubeName;
-            render();
-            toast(`模型已导入：${name}`);
-          } catch (error) { toast(`导入模型失败：${compactRealError(error)}`); }
-        },
-      });
-    } catch (error) { toast(`模型导入校验失败：${compactRealError(error, "YAML 校验失败")}`); }
-  };
-  reader.readAsText(file);
+  if (state.modelState === "dirty") return toast("请先保存或还原当前模型修改");
+  if (file.size > 10 * 1024 * 1024) return toast("文件大小不得超过 10 MB");
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("无法读取文件"));
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.readAsDataURL(file);
+    });
+    const upload = { name: file.name, data };
+    const preview = await realApi("/api/model-transfer/preview", { method: "POST", body: JSON.stringify({ upload }) });
+    const conflicts = preview.entries.filter(item => item.conflict);
+    const overwritten = new Set();
+    let mode = "merge";
+    const update = () => {
+      mode = $("#modelImportMode").value;
+      $("#modelImportConflicts").hidden = mode !== "merge" || !conflicts.length;
+      $("#modelImportReplace").hidden = mode !== "replace";
+      const count = mode === "replace" ? preview.entries.length : preview.entries.length - conflicts.length + overwritten.size;
+      $("#modelImportSummary").textContent = mode === "replace"
+        ? `导入 ${count} 个模型，覆盖 ${conflicts.length} 个同名模型，删除 ${preview.removed.length} 个本地模型。`
+        : `新增 ${preview.entries.length - conflicts.length} 个，覆盖 ${overwritten.size} 个，保留本地 ${conflicts.length - overwritten.size} 个。`;
+      $("#modalConfirm").textContent = mode === "replace" ? "备份并全量覆盖" : `导入 ${count} 个模型`;
+      $("#modalConfirm").disabled = !count || (mode === "replace" && $("#modelImportConfirm").value !== "全量覆盖");
+      $$("#modelImportConflicts input[data-id]").forEach(input => { input.checked = overwritten.has(input.dataset.id); });
+    };
+    const missing = [...new Set(preview.entries.map(item => item.source))].filter(source => !dataSources.some(item => item.name === source));
+    openModal({
+      title: "导入语义模型", sub: `${file.name} · ${preview.entries.length} 个模型 · 保存为草稿，检查后点击“发布”`,
+      wide: true, icon: "↑", confirm: "导入模型",
+      body: `<div class="model-transfer"><label class="field">导入方式<select id="modelImportMode"><option value="merge">增量导入（推荐）</option><option value="replace">全量覆盖</option></select><small>增量保留其他本地模型；全量覆盖以文件为准，删除文件中没有的本地模型。</small></label><div class="soft-box" id="modelImportSummary" role="status"></div>
+        ${missing.length ? `<p class="muted">目标环境缺少数据源：${missing.map(escapeHtml).join("、")}。导入后请配置数据源，再发布。</p>` : ""}
+        <div class="transfer-preview-list"><table class="table"><thead><tr><th>模型</th><th>数据源</th><th>对比结果</th></tr></thead><tbody>${preview.entries.map(item => `<tr><td><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.id)}</small></td><td>${escapeHtml(item.source)}</td><td>${item.conflict ? "同名冲突" : "新增"}</td></tr>`).join("")}</tbody></table></div>
+        <section id="modelImportConflicts"><h3>同名冲突处理</h3><p class="muted">默认保留本地。勾选需要覆盖的模型。</p><div class="actions"><button type="button" class="btn small" id="overwriteAll">全部覆盖</button><button type="button" class="btn small" id="keepAll">全部保留本地</button></div><div class="transfer-conflicts">${conflicts.map(item => `<label class="transfer-choice"><input type="checkbox" data-id="${escapeHtml(item.id)}"><span>覆盖 ${escapeHtml(item.title)} <small>${escapeHtml(item.id)}</small></span></label>`).join("")}</div></section>
+        <section id="modelImportReplace" hidden><div class="soft-box red"><strong>将删除 ${preview.removed.length} 个本地模型</strong><p>${preview.removed.map(item => escapeHtml(item.title)).join("、") || "没有需要删除的模型"}</p><p>服务端先备份整个模型目录。请检查关联关系及 MCP Server 的绑定模型。</p></div><label class="field">输入“全量覆盖”确认<input id="modelImportConfirm" autocomplete="off" placeholder="全量覆盖"></label></section></div>`,
+      afterOpen: () => {
+        $("#modelImportMode").onchange = update;
+        $("#modelImportConfirm").oninput = update;
+        $("#overwriteAll").onclick = () => { conflicts.forEach(item => overwritten.add(item.id)); update(); };
+        $("#keepAll").onclick = () => { overwritten.clear(); update(); };
+        $$("#modelImportConflicts input[data-id]").forEach(input => input.onchange = () => { input.checked ? overwritten.add(input.dataset.id) : overwritten.delete(input.dataset.id); update(); });
+        update();
+      },
+      onConfirm: async () => {
+        setModalBusy();
+        try {
+          const result = await realApi("/api/model-transfer/import", { method: "POST", body: JSON.stringify({ upload, mode, overwriteIds: [...overwritten], revision: preview.revision, confirmReplace: $("#modelImportConfirm").value }) });
+          closeModal();
+          await loadRealData();
+          render();
+          openModal({ title: "导入完成", icon: "✓", confirm: "完成", body: `<div class="soft-box"><strong>已导入 ${result.imported} 个模型</strong><p>保留本地 ${result.skipped} 个，删除 ${result.removed} 个。请检查草稿后点击“发布”。</p>${result.backup ? `<p>备份位置：<code>${escapeHtml(result.backup)}</code></p>` : ""}</div>` });
+        } catch (error) { restoreModalActions("重新导入"); toast(compactRealError(error)); update(); }
+      },
+    });
+  } catch (error) { toast(`模型导入校验失败：${compactRealError(error)}`); }
 }
 
 async function exportCurrentModel() {
-  const model = currentModel();
-  const data = currentModelData();
-  if (!model || !data?.yaml) return toast("当前没有可导出的模型");
-  downloadText(data.yaml, data.filename || `${model.id}.yml`, "application/yaml;charset=utf-8");
-  toast(`模型已导出：${data.filename || model.id}`);
+  if (state.modelState === "dirty") return toast("请先保存或还原当前模型修改，导出使用已保存版本");
+  try {
+    const { entries } = await realApi("/api/model-transfer/catalog");
+    if (!entries.length) return toast("当前没有可导出的模型");
+    const selected = new Set(entries.some(item => item.id === state.model) ? [state.model] : []);
+    let search = "";
+    const redraw = () => {
+      const shown = entries.filter(item => `${item.title} ${item.id} ${item.source}`.toLowerCase().includes(search));
+      const sources = [...new Set(shown.map(item => item.source))];
+      $("#modelExportList").innerHTML = sources.map(source => {
+        const group = shown.filter(item => item.source === source);
+        return `<section class="transfer-export-group"><label class="transfer-choice transfer-export-heading"><input type="checkbox" data-source="${escapeHtml(source)}" ${group.every(item => selected.has(item.id)) ? "checked" : ""}><strong>${escapeHtml(source)}</strong><small>${group.length} 个模型</small></label>${group.map(item => `<label class="transfer-choice"><input type="checkbox" data-id="${escapeHtml(item.id)}" ${selected.has(item.id) ? "checked" : ""}><span>${escapeHtml(item.title)}<small>${escapeHtml(item.id)}</small></span></label>`).join("")}</section>`;
+      }).join("") || '<div class="empty compact">没有匹配的模型</div>';
+      $$("#modelExportList input[data-id]").forEach(input => input.onchange = () => { input.checked ? selected.add(input.dataset.id) : selected.delete(input.dataset.id); redraw(); });
+      $$("#modelExportList input[data-source]").forEach(input => {
+        const group = shown.filter(item => item.source === input.dataset.source);
+        input.indeterminate = group.some(item => selected.has(item.id)) && !group.every(item => selected.has(item.id));
+        input.onchange = () => { group.forEach(item => input.checked ? selected.add(item.id) : selected.delete(item.id)); redraw(); };
+      });
+      $("#modelExportCount").textContent = `已选择 ${selected.size} / ${entries.length} 个模型`;
+      $("#modalConfirm").textContent = `导出 ${selected.size} 个模型`;
+      $("#modalConfirm").disabled = !selected.size;
+    };
+    openModal({
+      title: "导出语义模型", sub: "选择已保存的模型，下载 ZIP 包（YAML 与模型清单）。", wide: true, icon: "↓",
+      body: '<div class="model-transfer"><label class="field">搜索模型<input id="modelExportSearch" placeholder="模型名称、ID 或数据源"></label><div class="actions"><button type="button" class="btn small" id="modelExportAll">全选所有模型</button><button type="button" class="btn small" id="modelExportNone">取消全选</button><span id="modelExportCount" role="status"></span></div><div id="modelExportList" class="transfer-preview-list"></div></div>',
+      afterOpen: () => {
+        $("#modelExportSearch").oninput = event => { search = event.target.value.trim().toLowerCase(); redraw(); };
+        $("#modelExportAll").onclick = () => { entries.forEach(item => selected.add(item.id)); redraw(); };
+        $("#modelExportNone").onclick = () => { selected.clear(); redraw(); };
+        redraw();
+      },
+      onConfirm: async () => {
+        setModalBusy();
+        try {
+          const response = await fetch("/api/model-transfer/export", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem(REAL_TOKEN_KEY) || ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected] }) });
+          if (!response.ok) throw new Error((await response.json()).error || "导出失败");
+          const url = URL.createObjectURL(await response.blob());
+          const link = document.createElement("a"); link.href = url; link.download = `semantic-models-${new Date().toISOString().slice(0,10)}.zip`; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+          closeModal(); toast(`已导出 ${selected.size} 个模型`);
+        } catch (error) { restoreModalActions("重新导出"); toast(compactRealError(error)); }
+      },
+    });
+  } catch (error) { toast(compactRealError(error)); }
 }
 
 function previewOpenApiImport(file) {
@@ -2373,7 +2439,7 @@ async function handleAction(action, element) {
     }
     if (action === "new-model") return realNewModelModal();
     if (action === "auto-model") return realAutoModelModal();
-    if (action === "import-model") return chooseLocalFile(".yml,.yaml,text/yaml", previewModelImport);
+    if (action === "import-model") { if (state.modelState === "dirty") return toast("请先保存或还原当前模型修改"); return chooseLocalFile(".zip,.yml,.yaml", previewModelImport); }
     if (action === "export-model") return exportCurrentModel();
     if (action === "remodel-model") return realRemodelModel();
     if (action === "apply-models") {
@@ -2410,14 +2476,22 @@ async function handleAction(action, element) {
     }
     if (action === "delete-model") {
       const model = currentModel();
-      return openModal({ title: `删除语义模型“${model.name}”？`, sub: "文件会移入可恢复目录，并重启 Cube。", icon: "!", confirm: "确认删除", body: `<label class="field">输入模型标识“${escapeHtml(model.id)}”确认<input id="deleteModelConfirm"></label>`, onConfirm: async () => {
+      const filename = currentModelData().filename;
+      let bindingInfo;
+      try { bindingInfo = await realApi(`/api/models/${encodeURIComponent(filename)}/mcp-bindings`); }
+      catch (error) { return toast(`无法检查 MCP 绑定：${compactRealError(error)}`); }
+      const affected = bindingInfo.servers || [];
+      const serverList = affected.map((server) => `<li><strong>${escapeHtml(server.name)}</strong> <code>${escapeHtml(server.id)}</code>：解除 ${server.boundModelIds.map(escapeHtml).join("、")}${server.remainingModelIds.length ? "" : "；该 Server 将自动停用"}</li>`).join("");
+      const detachMcpBindings = affected.length > 0;
+      return openModal({ title: `删除语义模型“${model.name}”？`, sub: detachMcpBindings ? "该操作会同步解除 MCP Server 的语义模型白名单。" : "文件会移入可恢复目录，并重启 Cube。", icon: "!", confirm: detachMcpBindings ? "解除绑定并删除" : "确认删除", body: `${detachMcpBindings ? `<div class="soft-box orange"><strong>将影响 ${affected.length} 个 MCP Server</strong><ul class="model-delete-bindings">${serverList}</ul><p class="muted">解除绑定后，这些 Server 的令牌仍会保留；失去最后一个模型的 Server 会自动停用。</p></div>` : ""}<label class="field" style="margin-top:14px">输入模型标识“${escapeHtml(model.id)}”确认<input id="deleteModelConfirm"></label>`, onConfirm: async () => {
         if ($("#deleteModelConfirm").value.trim() !== model.id) return toast("确认名称不一致");
         const confirmButton = $("#modalConfirm");
         if (confirmButton) { confirmButton.disabled = true; confirmButton.textContent = "删除中…"; }
         try {
-          const result = await realApi(`/api/models/${encodeURIComponent(currentModelData().filename)}`, { method: "DELETE" });
+          const result = await realApi(`/api/models/${encodeURIComponent(filename)}`, { method: "DELETE", body: JSON.stringify({ detachMcpBindings }) });
           closeModal();
-          try { await refreshAndToast(result.warning || "模型已移入回收目录并从 Cube 卸载"); }
+          const detached = (result.detachedServers || []).map((server) => server.name).join("、");
+          try { await refreshAndToast(result.warning || (detached ? `模型已删除，并解除 ${detached} 的绑定` : "模型已移入回收目录并从 Cube 卸载")); }
           catch (refreshError) { toast(`模型已删除，刷新失败：${compactRealError(refreshError)}`); }
         } catch (error) {
           closeModal();

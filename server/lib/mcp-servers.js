@@ -29,7 +29,7 @@ function normalizeServer(input, { requiredId = true } = {}) {
   }
   const modelIds = [...new Set((Array.isArray(input.modelIds) ? input.modelIds : [])
     .map((item) => String(item || '').trim()).filter(Boolean))];
-  if (!modelIds.length && id !== 'default') throw new Error('至少绑定一个语义模型');
+  if (!modelIds.length && id !== 'default' && input.enabled !== false) throw new Error('至少绑定一个语义模型');
   return {
     id,
     name: String(input.name || '').trim().slice(0, 80) || id,
@@ -119,6 +119,38 @@ function remove(deployDir, id) {
   write(deployDir, next);
 }
 
+function modelBindings(deployDir, modelIds) {
+  const requested = new Set((Array.isArray(modelIds) ? modelIds : []).map(String).filter(Boolean));
+  return read(deployDir).servers.map((server) => {
+    const boundModelIds = server.modelIds.filter((id) => requested.has(id));
+    return boundModelIds.length ? {
+      id: server.id,
+      name: server.name,
+      enabled: server.enabled,
+      boundModelIds,
+      remainingModelIds: server.modelIds.filter((id) => !requested.has(id)),
+    } : null;
+  }).filter(Boolean);
+}
+
+// 删除语义模型时同步移除 MCP 白名单。失去最后一个模型的非默认 Server
+// 保留配置和令牌审计记录，但自动停用，避免空白名单被误认为可用服务。
+function detachModels(deployDir, modelIds) {
+  const requested = new Set((Array.isArray(modelIds) ? modelIds : []).map(String).filter(Boolean));
+  const affected = modelBindings(deployDir, [...requested]);
+  if (!affected.length) return [];
+  const next = read(deployDir).servers.map((server) => {
+    const modelIdsAfter = server.modelIds.filter((id) => !requested.has(id));
+    return {
+      ...server,
+      modelIds: modelIdsAfter,
+      enabled: modelIdsAfter.length ? server.enabled : false,
+    };
+  });
+  write(deployDir, next);
+  return affected.map((item) => ({ ...item, disabled: !item.remainingModelIds.length }));
+}
+
 function modelNameFromMember(member) {
   const value = String(member || '').trim();
   const dot = value.indexOf('.');
@@ -170,5 +202,5 @@ function createScopedCubeToolService(service, server) {
 
 module.exports = {
   CONFIG_NAME, McpAccessError, configPath, read, write, ensureDefault, find, create, update, remove,
-  normalizeServer, queryMembers, createScopedCubeToolService,
+  normalizeServer, queryMembers, createScopedCubeToolService, modelBindings, detachModels,
 };

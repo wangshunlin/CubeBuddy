@@ -31,6 +31,7 @@
     "@cubejs-backend/schema-compiler": "^1.6.72",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "fflate": "^0.8.3",
     "mysql2": "3.24.4",
     "yaml": "2.9.0",
     "zod": "4.2.0"

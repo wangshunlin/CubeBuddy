@@ -22,6 +22,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 const envfile = require('./lib/envfile');
 const models = require('./lib/models');
+const modelTransfer = require('./lib/model-transfer');
 const jwtlib = require('./lib/jwt');
 const runx = require('./lib/run');
 const dbx = require('./lib/db');
@@ -907,6 +908,29 @@ async function handleApi(req, res, url) {
     return send(200, { ok: true, secret: newSecret, note: '已更新 CUBEJS_API_SECRET，需「应用并重建」生效；已有 JWT 将全部失效' });
   }
 
+  // 批量迁移仅写草稿，不触发 Cube 重启。
+  if (sub === 'model-transfer/catalog' && method === 'GET') {
+    try { return send(200, { ok: true, entries: modelTransfer.catalog(DEPLOY_DIR) }); }
+    catch (error) { return send(400, { ok: false, error: error.message }); }
+  }
+  if (sub.startsWith('model-transfer/') && method === 'POST') {
+    try {
+      const body = await readBody(req);
+      if (sub === 'model-transfer/export') {
+        const buffer = modelTransfer.exportZip(DEPLOY_DIR, body.ids);
+        res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="semantic-models.zip"', 'Cache-Control': 'no-store' });
+        return res.end(buffer);
+      }
+      if (sub === 'model-transfer/preview') return send(200, { ok: true, ...modelTransfer.preview(DEPLOY_DIR, body.upload) });
+      if (sub === 'model-transfer/import') {
+        if ([...modelApplyJobs.values()].some((job) => job.status === 'running')) return send(409, { ok: false, error: '模型正在发布，请完成后再导入' });
+        const result = modelTransfer.importModels(DEPLOY_DIR, body);
+        clearNativeMcpCache();
+        return send(200, { ok: true, ...result });
+      }
+    } catch (error) { return send(400, { ok: false, error: error.message }); }
+  }
+
   // 模型列表
   if (method === 'GET' && sub === 'models') {
     const state = readConsoleState();
@@ -1208,6 +1232,21 @@ async function handleApi(req, res, url) {
     } catch (e) { return send(400, { ok: false, error: e.message }); }
   }
 
+  function modelCubeIds(name) {
+    const content = models.get(DEPLOY_DIR, name);
+    const document = YAML.parseDocument(content);
+    if (document.errors.length) throw new Error(document.errors.map((error) => error.message).join('; '));
+    return (document.toJS()?.cubes || []).map((cube) => String(cube?.name || '').trim()).filter(Boolean);
+  }
+
+  // 删除前供界面展示影响范围；删除请求仍会重新计算，不能依赖此预览结果。
+  if (method === 'GET' && sub.startsWith('models/') && sub.endsWith('/mcp-bindings')) {
+    try {
+      const name = decodeURIComponent(sub.slice('models/'.length, -'/mcp-bindings'.length));
+      return send(200, { ok: true, modelIds: modelCubeIds(name), servers: mcpServers.modelBindings(DEPLOY_DIR, modelCubeIds(name)) });
+    } catch (error) { return send(400, { ok: false, error: error.message }); }
+  }
+
   // 读取单个模型
   if (method === 'GET' && sub.startsWith('models/')) {
     try {
@@ -1239,12 +1278,26 @@ async function handleApi(req, res, url) {
   // 删除单个模型（mv 到 schema/.trash/ 可恢复 + 自动重启 Cube）
   if (method === 'DELETE' && sub.startsWith('models/')) {
     try {
+      const body = await readBody(req);
+      const modelIds = modelCubeIds(r2);
+      const bindings = mcpServers.modelBindings(DEPLOY_DIR, modelIds);
+      if (bindings.length && body.detachMcpBindings !== true) {
+        return send(409, { ok: false, error: '该语义模型仍被 MCP Server 绑定，请确认解除绑定后再删除', modelIds, servers: bindings });
+      }
+      const previousMcpServers = mcpServers.read(DEPLOY_DIR);
       const r = models.trash(DEPLOY_DIR, r2);
-      const rr = await runx.compose(DEPLOY_DIR, ['up', '-d', '--no-build', '--force-recreate', '--remove-orphans', 'cube_api', 'cube_refresh_worker']);
-      if (!rr.ok) {
-        // Cube 重建失败时回滚文件移动，避免接口报错但模型已经消失，导致前端再次删除时报“文件不存在”。
+      let detachedServers = [];
+      try {
+        if (bindings.length) {
+          detachedServers = mcpServers.detachModels(DEPLOY_DIR, modelIds);
+          clearNativeMcpCache();
+        }
+        const rr = await runx.compose(DEPLOY_DIR, ['up', '-d', '--no-build', '--force-recreate', '--remove-orphans', 'cube_api', 'cube_refresh_worker']);
+        if (!rr.ok) throw new Error(rr.error || rr.stderr || 'Cube 重启失败');
+      } catch (error) {
         try { fs.renameSync(path.join(DEPLOY_DIR, r.trashed), path.join(DEPLOY_DIR, 'schema', r2)); } catch (_) { /* 保留原始错误 */ }
-        return send(500, { ok: false, error: rr.error || rr.stderr || 'Cube 重启失败', restored: fs.existsSync(path.join(DEPLOY_DIR, 'schema', r2)) });
+        try { mcpServers.write(DEPLOY_DIR, previousMcpServers.servers); clearNativeMcpCache(); } catch (_) { /* 保留原始错误 */ }
+        return send(500, { ok: false, error: error.message || 'Cube 重建失败', restored: fs.existsSync(path.join(DEPLOY_DIR, 'schema', r2)) });
       }
       let loaded = null;
       let warning = '';
@@ -1256,6 +1309,7 @@ async function handleApi(req, res, url) {
         trashed: r.trashed,
         restart: 'ok',
         loaded,
+        detachedServers,
         warning: warning || undefined,
       });
     } catch (e) {
@@ -1324,7 +1378,9 @@ async function handleApi(req, res, url) {
   // 签发服务 JWT（供 anythingmcp 鉴权）
   if (method === 'POST' && sub === 'jwt') {
     try {
-      return send(200, issueMcpToken('default', await readBody(req)));
+      const target = defaultMcpServer();
+      if (!target) return send(400, { ok: false, error: '未配置默认 MCP Server，请先创建或指定默认 Server' });
+      return send(200, issueMcpToken(target.id, await readBody(req)));
     } catch (e) {
       return send(400, { ok: false, error: e.message });
     }
