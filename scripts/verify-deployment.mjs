@@ -78,7 +78,7 @@ await check('容器文件与发布清单一致', async () => {
 
 await check('原生 MCP 构建产物', async () => {
   docker('exec', container, 'test', '-s', '/app/dist/mcp/index.js');
-  const marker = docker('exec', container, 'sh', '-c', 'grep -c "CubeBuddy 原生 MCP" /app/server/server.js');
+  const marker = docker('exec', container, 'sh', '-c', 'grep -c "nativeMcpForServer(mcpServer).handle" /app/server/server.js');
   if (Number(marker) < 1) throw new Error('server.js 缺少 /mcp 路由');
   return 'route + dist';
 });
