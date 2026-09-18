@@ -85,7 +85,7 @@ await check('原生 MCP 构建产物', async () => {
 
 await check('配置台健康检查', () => fetchStatus(`http://127.0.0.1:${consolePort}/healthz`, [200]));
 await check('Cube 就绪检查', () => fetchStatus(`http://127.0.0.1:${cubePort}/readyz`, [200]));
-await check('MCP 未鉴权检查', () => fetchStatus(`http://127.0.0.1:${cubePort}/mcp`, [401]));
+await check('MCP 默认入口已取消', () => fetchStatus(`http://127.0.0.1:${cubePort}/mcp`, [404]));
 
 await check('MCP Server 动态路由检查', async () => {
   const response = await fetch(`http://127.0.0.1:${cubePort}/mcp/release-route-check`, { redirect: 'manual' });

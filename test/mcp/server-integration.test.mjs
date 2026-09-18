@@ -82,10 +82,14 @@ async function adminRequest(endpoint, pathname, options = {}) {
 }
 
 test('real CubeBuddy server issues, verifies and revokes native MCP tokens', async (t) => {
-  const fixture = await startCubeBuddy();
+  const fixture = await startCubeBuddy(async (deployDir) => {
+    await mkdir(path.join(deployDir, 'schema'), { recursive: true });
+    await writeFile(path.join(deployDir, 'schema', 'orders.yml'), 'cubes:\n  - name: orders\n');
+  });
   t.after(() => fixture.close());
+  await adminRequest(fixture.endpoint, '/api/mcp-servers', { method: 'POST', body: JSON.stringify({ id: 'test-agent', modelIds: ['orders'] }) });
 
-  const issued = await adminRequest(fixture.endpoint, '/api/jwt', {
+  const issued = await adminRequest(fixture.endpoint, '/api/mcp-servers/test-agent/tokens', {
     method: 'POST',
     body: JSON.stringify({ days: 1, purpose: 'native-mcp-integration' }),
   });
@@ -99,7 +103,8 @@ test('real CubeBuddy server issues, verifies and revokes native MCP tokens', asy
   assert.equal(issued.record.tokenHash, undefined);
 
   const client = new Client({ name: 'cubebuddy-real-server-test', version: '1.0.0' });
-  await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
+  const endpoint = new URL('/mcp/test-agent', fixture.endpoint);
+  await client.connect(new StreamableHTTPClientTransport(endpoint, {
     authProvider: { token: async () => issued.token },
   }));
   const listed = await client.listTools();
@@ -116,7 +121,7 @@ test('real CubeBuddy server issues, verifies and revokes native MCP tokens', asy
 
   const revokedClient = new Client({ name: 'cubebuddy-revoked-token-test', version: '1.0.0' });
   await assert.rejects(
-    revokedClient.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
+    revokedClient.connect(new StreamableHTTPClientTransport(endpoint, {
       authProvider: { token: async () => issued.token },
     })),
     /401|Unauthorized|invalid|revoked/i,
@@ -124,7 +129,7 @@ test('real CubeBuddy server issues, verifies and revokes native MCP tokens', asy
   await revokedClient.close().catch(() => {});
 });
 
-test('startup migrates legacy plaintext token records without invalidating them', async (t) => {
+test('startup migrates legacy plaintext token records but rejects tokens without an explicit Server', async (t) => {
   const legacyToken = jwtlib.sign({ secret: JWT_SECRET, days: 1, context: { service: true, purpose: 'legacy' } });
   const fixture = await startCubeBuddy(async (deployDir) => {
     await writeFile(path.join(deployDir, 'jwt-token-registry.json'), JSON.stringify([{
@@ -143,11 +148,13 @@ test('startup migrates legacy plaintext token records without invalidating them'
   assert.match(migrated[0].tokenHash, /^[a-f0-9]{64}$/);
 
   const client = new Client({ name: 'cubebuddy-legacy-token-test', version: '1.0.0' });
-  await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
-    authProvider: { token: async () => legacyToken },
-  }));
-  assert.equal((await client.listTools()).tools.length, 6);
-  await client.close();
+  await assert.rejects(
+    client.connect(new StreamableHTTPClientTransport(new URL('/mcp/any-server', fixture.endpoint), {
+      authProvider: { token: async () => legacyToken },
+    })),
+    /404|MCP Server|JWT|Unauthorized/i,
+  );
+  await client.close().catch(() => {});
 });
 
 test('MCP Server keys are bound to their own endpoint', async (t) => {
@@ -159,8 +166,7 @@ test('MCP Server keys are bound to their own endpoint', async (t) => {
   t.after(() => fixture.close());
 
   const listed = await adminRequest(fixture.endpoint, '/api/mcp-servers');
-  assert.equal(listed.servers[0].id, 'default');
-  assert.deepEqual(listed.servers[0].modelIds, ['finance', 'orders']);
+  assert.deepEqual(listed.servers, []);
 
   const created = await adminRequest(fixture.endpoint, '/api/mcp-servers', {
     method: 'POST',
@@ -182,35 +188,30 @@ test('MCP Server keys are bound to their own endpoint', async (t) => {
   const wrongClient = new Client({ name: 'mcp-server-wrong-endpoint-test', version: '1.0.0' });
   await assert.rejects(
     wrongClient.connect(new StreamableHTTPClientTransport(fixture.endpoint, { authProvider: { token: async () => issued.token } })),
-    /401|Unauthorized|invalid|JWT/i,
+    /404|serverId|Unauthorized|invalid|JWT/i,
   );
   await wrongClient.close().catch(() => {});
 });
 
-test('default alias can be deleted, reassigned and still enforces server-scoped keys', async (t) => {
+test('MCP requires an explicit Server endpoint and rejects the legacy default alias', async (t) => {
   const fixture = await startCubeBuddy(async (dir) => {
     await mkdir(path.join(dir, 'schema'), { recursive: true });
     await writeFile(path.join(dir, 'schema', 'orders.yml'), 'cubes:\n - name: orders\n');
   });
   t.after(() => fixture.close());
-  const old = await adminRequest(fixture.endpoint, '/api/jwt', { method: 'POST', body: '{}' });
-  const blocked = await fetch(new URL('/api/mcp-servers/default', fixture.endpoint), { method: 'DELETE', headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
-  assert.equal(blocked.status, 409);
-  await adminRequest(fixture.endpoint, `/api/jwt/tokens/${old.record.id}`, { method: 'DELETE' });
-  await adminRequest(fixture.endpoint, '/api/mcp-servers/default', { method: 'DELETE' });
-  assert.deepEqual((await adminRequest(fixture.endpoint, '/api/mcp-servers')).servers, []);
   const empty = await fetch(fixture.endpoint);
   assert.equal(empty.status, 404);
-  assert.match((await empty.json()).error, /未配置/);
-  await adminRequest(fixture.endpoint, '/api/mcp-servers', { method: 'POST', body: JSON.stringify({ id: 'sales', modelIds: ['orders'], isDefault: true }) });
-  const issued = await adminRequest(fixture.endpoint, '/api/jwt', { method: 'POST', body: '{}' });
+  assert.match((await empty.json()).error, /serverId/);
+  const removedResponse = await fetch(new URL('/api/jwt', fixture.endpoint), { method: 'POST', headers: { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(removedResponse.status, 410);
+  assert.equal((await removedResponse.json()).error.includes('默认 MCP Server 已取消'), true);
+  await adminRequest(fixture.endpoint, '/api/mcp-servers', { method: 'POST', body: JSON.stringify({ id: 'sales', modelIds: ['orders'] }) });
+  const issued = await adminRequest(fixture.endpoint, '/api/mcp-servers/sales/tokens', { method: 'POST', body: '{}' });
   assert.equal(issued.record.mcpServerId, 'sales');
-  for (const url of [fixture.endpoint, new URL('/mcp/sales', fixture.endpoint)]) {
-    const client = new Client({ name: 'alias-test', version: '1' });
-    await client.connect(new StreamableHTTPClientTransport(url, { authProvider: { token: async () => issued.token } }));
-    assert.equal((await client.listTools()).tools.length, 6);
-    await client.close();
-  }
+  const client = new Client({ name: 'explicit-endpoint-test', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL('/mcp/sales', fixture.endpoint), { authProvider: { token: async () => issued.token } }));
+  assert.equal((await client.listTools()).tools.length, 6);
+  await client.close();
 });
 
 test('model transfer APIs require admin and save imported models as drafts', async (t) => {

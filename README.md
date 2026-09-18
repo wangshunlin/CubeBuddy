@@ -220,7 +220,7 @@ http://部署机IP:18080/mcp/<server-id>
 Authorization: Bearer <CubeBuddy JWT>
 ~~~
 
-每个 JWT 仅能访问所属 MCP Server。服务端在元数据发现、模型详情、维度搜索、预检和实际查询时校验模型白名单。旧 `/mcp` 路径是 `default` Server 的兼容入口。
+每个 JWT 仅能访问所属 MCP Server。服务端在元数据发现、模型详情、维度搜索、预检和实际查询时校验模型白名单。所有客户端都必须使用显式的 `/mcp/<server-id>` 地址；`/mcp` 不提供默认服务。
 
 ## OpenAPI 与 REST
 
@@ -237,7 +237,7 @@ http://部署机IP:18080/openapi.yaml
 | 接口 | 鉴权方式 |
 | --- | --- |
 | 配置台登录和 `/api/*` 管理接口 | `CUBE_UI_ADMIN_TOKEN` |
-| `/mcp`、`/mcp/<server-id>` | 对应 MCP Server 的 CubeBuddy JWT |
+| `/mcp/<server-id>` | 对应 MCP Server 的 CubeBuddy JWT |
 | Cube 查询兼容接口 | Cube JWT / CubeBuddy JWT |
 | `/openapi.yaml`、`/openapi.json` | 默认公开 |
 | `/healthz`、`/readyz`、`/livez`、`/gateway-healthz` | 默认公开 |

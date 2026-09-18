@@ -29,12 +29,10 @@ function normalizeServer(input, { requiredId = true } = {}) {
   }
   const modelIds = [...new Set((Array.isArray(input.modelIds) ? input.modelIds : [])
     .map((item) => String(item || '').trim()).filter(Boolean))];
-  if (!modelIds.length && id !== 'default' && input.enabled !== false) throw new Error('至少绑定一个语义模型');
+  if (!modelIds.length && input.enabled !== false) throw new Error('至少绑定一个语义模型');
   return {
     id,
     name: String(input.name || '').trim().slice(0, 80) || id,
-    // 旧配置中的 default Server 继续作为 /mcp 的默认入口。
-    isDefault: input.isDefault === true || (input.isDefault === undefined && id === 'default'),
     instructions: String(input.instructions || '').trim().slice(0, 2000),
     enabled: input.enabled !== false,
     modelIds,
@@ -60,7 +58,6 @@ function write(deployDir, servers) {
     if (ids.has(item.id)) throw new Error(`Server ID 已存在：${item.id}`);
     ids.add(item.id);
   });
-  if (normalized.filter((item) => item.isDefault).length > 1) throw new Error('只能设置一个默认 MCP Server');
   const target = configPath(deployDir);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.tmp`;
@@ -68,17 +65,6 @@ function write(deployDir, servers) {
   fs.renameSync(temporary, target);
   try { fs.chmodSync(target, 0o600); } catch (_) { /* best effort */ }
   return { version: 1, servers: normalized };
-}
-
-function ensureDefault(deployDir, modelIds) {
-  const current = read(deployDir);
-  // 仅首次启动时创建默认 Server。已有的空配置表示管理员已主动删除全部 Server。
-  if (fs.existsSync(configPath(deployDir))) return current;
-  const ids = [...new Set((modelIds || []).map(String).filter(Boolean))];
-  return write(deployDir, [{
-    id: 'default', name: '默认 MCP Server', isDefault: true,
-    instructions: '', enabled: true, modelIds: ids,
-  }]);
 }
 
 function find(deployDir, id) {
@@ -92,10 +78,7 @@ function create(deployDir, input, availableModelIds) {
   if (invalid.length) throw new Error(`语义模型不存在：${invalid.join('、')}`);
   const current = read(deployDir);
   if (current.servers.some((item) => item.id === next.id)) throw new Error('Server ID 已存在');
-  const servers = next.isDefault
-    ? [...current.servers.map((item) => ({ ...item, isDefault: false })), next]
-    : [...current.servers, next];
-  return write(deployDir, servers).servers.find((item) => item.id === next.id);
+  return write(deployDir, [...current.servers, next]).servers.find((item) => item.id === next.id);
 }
 
 function update(deployDir, id, patch, availableModelIds) {
@@ -106,9 +89,7 @@ function update(deployDir, id, patch, availableModelIds) {
   const allowed = new Set(availableModelIds || []);
   const invalid = next.modelIds.filter((modelId) => !allowed.has(modelId));
   if (invalid.length) throw new Error(`语义模型不存在：${invalid.join('、')}`);
-  current.servers = next.isDefault
-    ? current.servers.map((item, itemIndex) => ({ ...(itemIndex === index ? next : item), isDefault: itemIndex === index }))
-    : current.servers.map((item, itemIndex) => itemIndex === index ? next : item);
+  current.servers = current.servers.map((item, itemIndex) => itemIndex === index ? next : item);
   return write(deployDir, current.servers).servers[index];
 }
 
@@ -133,7 +114,7 @@ function modelBindings(deployDir, modelIds) {
   }).filter(Boolean);
 }
 
-// 删除语义模型时同步移除 MCP 白名单。失去最后一个模型的非默认 Server
+// 删除语义模型时同步移除 MCP 白名单。失去最后一个模型的 Server
 // 保留配置和令牌审计记录，但自动停用，避免空白名单被误认为可用服务。
 function detachModels(deployDir, modelIds) {
   const requested = new Set((Array.isArray(modelIds) ? modelIds : []).map(String).filter(Boolean));
@@ -201,6 +182,6 @@ function createScopedCubeToolService(service, server) {
 }
 
 module.exports = {
-  CONFIG_NAME, McpAccessError, configPath, read, write, ensureDefault, find, create, update, remove,
+  CONFIG_NAME, McpAccessError, configPath, read, write, find, create, update, remove,
   normalizeServer, queryMembers, createScopedCubeToolService, modelBindings, detachModels,
 };

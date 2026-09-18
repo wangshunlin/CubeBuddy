@@ -416,8 +416,7 @@ function normalizeTokenRecord(record) {
     fingerprint: String(record.fingerprint || tokenHash.slice(0, 16)),
     tokenHash,
     ...(record.jti ? { jti: String(record.jti) } : {}),
-    // 旧版密钥只允许继续访问兼容的 default MCP Server。
-    mcpServerId: String(record.mcpServerId || 'default'),
+    mcpServerId: String(record.mcpServerId || ''),
   };
 }
 
@@ -490,13 +489,13 @@ function mcpAllowedOrigins() {
   ].filter(Boolean))];
 }
 
-function verifyMcpAccessToken(token, expectedServerId = 'default') {
+function verifyMcpAccessToken(token, expectedServerId) {
   const claims = jwtlib.verifyClaims(token, envSecret());
   if (!claims) throw new Error('JWT 签名无效或已过期');
   if (!tokenRecordActive(token)) throw new Error('JWT 未登记或已撤销');
   const audiences = Array.isArray(claims.aud) ? claims.aud : claims.aud ? [claims.aud] : [];
   if (audiences.length && !audiences.includes('cube-mcp')) throw new Error('JWT audience 不允许访问原生 MCP');
-  const tokenServerId = String(claims.p?.mcpServerId || 'default');
+  const tokenServerId = String(claims.p?.mcpServerId || '');
   if (tokenServerId !== expectedServerId) throw new Error('JWT 不允许访问当前 MCP Server');
   const scopes = Array.isArray(claims.scope)
     ? claims.scope.map(String)
@@ -534,7 +533,7 @@ function availableMcpModelIds() {
 }
 
 function currentMcpServers() {
-  return mcpServers.ensureDefault(DEPLOY_DIR, availableMcpModelIds()).servers;
+  return mcpServers.read(DEPLOY_DIR).servers;
 }
 
 function nativeMcpForServer(server) {
@@ -559,10 +558,6 @@ function clearNativeMcpCache() {
 
 function mcpServerById(id) {
   return currentMcpServers().find((item) => item.id === id) || null;
-}
-
-function defaultMcpServer() {
-  return currentMcpServers().find((item) => item.isDefault) || null;
 }
 
 function mcpServerView(server) {
@@ -1375,15 +1370,9 @@ async function handleApi(req, res, url) {
     return send(200, { ok: true, deleted: id });
   }
 
-  // 签发服务 JWT（供 anythingmcp 鉴权）
+  // 已取消默认 Server；服务密钥必须由指定 Server 的接口签发。
   if (method === 'POST' && sub === 'jwt') {
-    try {
-      const target = defaultMcpServer();
-      if (!target) return send(400, { ok: false, error: '未配置默认 MCP Server，请先创建或指定默认 Server' });
-      return send(200, issueMcpToken(target.id, await readBody(req)));
-    } catch (e) {
-      return send(400, { ok: false, error: e.message });
-    }
+    return send(410, { ok: false, error: '默认 MCP Server 已取消，请通过 /api/mcp-servers/:serverId/tokens 签发服务密钥' });
   }
 
   // 下载最终静态 OpenAPI 规范（AnythingMCP Auto-Import 用）
@@ -1404,21 +1393,20 @@ async function handleApi(req, res, url) {
     const cubeBase = configuredEnv.CUBE_PUBLIC_BASE || 'http://127.0.0.1:18080';
     const amcpBase = configuredEnv.ANYTHINGMCP_PUBLIC_BASE || '';
     const mcpEndpoint = cubeBase + '/mcp';
-    const mcpStatus = await probeNativeMcp(mcpEndpoint);
     const tools = parseCubeCoreTools().map((item) => item.name);
     const nativeTools = ['cube_meta', 'cube_meta_detail', 'cube_glossary_resolve', 'cube_search', 'cube_dry_run', 'cube_load'];
     return send(200, {
       ok: true,
       nativeMcp: {
-        endpoint: mcpEndpoint,
+        endpointTemplate: `${mcpEndpoint}/<serverId>`,
         transport: 'streamable-http',
         auth: 'Authorization: Bearer <CubeBuddy JWT>',
         tools: nativeTools,
-        status: mcpStatus,
+        status: { healthy: true, status: 0, message: '请使用指定 MCP Server 的 Endpoint 连接' },
       },
       mcpServers: currentMcpServers().map((server) => ({
         ...mcpServerView(server),
-        endpoint: server.isDefault ? mcpEndpoint : `${mcpEndpoint}/${server.id}`,
+        endpoint: `${mcpEndpoint}/${server.id}`,
       })),
       cube: {
         base: cubeBase,
@@ -1515,12 +1503,14 @@ const server = http.createServer((req, res) => {
     return sendJson(res, 200, { ok: true, service: 'cube-console-next' });
   }
 
-  // /mcp 是管理员指定的默认 Server 入口；/mcp/:id 为独立 MCP Server。
-  const mcpRoute = url.pathname.match(/^\/mcp(?:\/([a-z][a-z0-9-]{0,62}))?\/?$/);
+  // 仅允许显式的 /mcp/:serverId，避免多 Server 时产生隐式路由。
+  if (/^\/mcp\/?$/.test(url.pathname)) {
+    return sendJson(res, 404, { ok: false, error: '请使用 /mcp/<serverId> 访问指定 MCP Server' });
+  }
+  const mcpRoute = url.pathname.match(/^\/mcp\/([a-z][a-z0-9-]{0,62})\/?$/);
   if (mcpRoute) {
     const serverId = mcpRoute[1];
-    const mcpServer = serverId ? mcpServerById(serverId) : defaultMcpServer();
-    if (!serverId && !mcpServer) return sendJson(res, 404, { ok: false, error: 'MCP 默认 Server 未配置，请先创建或指定一个默认 MCP Server' });
+    const mcpServer = mcpServerById(serverId);
     if (!mcpServer || !mcpServer.enabled) return sendJson(res, 404, { ok: false, error: 'MCP Server 不存在或已停用' });
     nativeMcpForServer(mcpServer).handle(req, res).catch((error) => {
       if (!res.headersSent) return sendJson(res, 500, { ok: false, error: 'MCP 请求处理失败' });

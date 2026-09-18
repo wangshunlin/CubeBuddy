@@ -86,33 +86,29 @@ test('failed state write rolls model files back to their exact originals', t => 
   assert.deepEqual(fs.readdirSync(path.join(dir, 'schema')), ['old.yml']);
 });
 
-test('default MCP deletion persists and a different server can become the only default', t => {
+test('MCP Servers have no implicit default and discard legacy default markers', t => {
   const dir = fixture(t);
-  servers.ensureDefault(dir, ['orders']);
-  servers.remove(dir, 'default');
-  assert.deepEqual(servers.ensureDefault(dir, ['orders']).servers, []);
-  servers.create(dir, { id: 'sales', modelIds: ['orders'], isDefault: true }, ['orders']);
-  servers.create(dir, { id: 'other', modelIds: ['orders'], isDefault: true }, ['orders']);
-  assert.deepEqual(servers.read(dir).servers.filter(item => item.isDefault).map(item => item.id), ['other']);
-  servers.update(dir, 'other', { isDefault: false }, ['orders']);
-  assert.equal(servers.read(dir).servers.some(item => item.isDefault), false);
+  servers.write(dir, [{ id: 'sales', modelIds: ['orders'], isDefault: true }]);
+  assert.equal(servers.read(dir).servers[0].isDefault, undefined);
+  servers.create(dir, { id: 'other', modelIds: ['orders'] }, ['orders']);
+  assert.deepEqual(servers.read(dir).servers.map(item => item.id), ['sales', 'other']);
 });
 
 test('detaching a deleted model removes every MCP binding and disables empty servers', t => {
   const dir = fixture(t);
   servers.write(dir, [
-    { id: 'default', isDefault: true, modelIds: ['orders', 'finance'] },
+    { id: 'catalog', modelIds: ['orders', 'finance'] },
     { id: 'orders-only', modelIds: ['orders'] },
     { id: 'finance-only', modelIds: ['finance'] },
   ]);
   const preview = servers.modelBindings(dir, ['orders']);
-  assert.deepEqual(preview.map(item => item.id), ['default', 'orders-only']);
+  assert.deepEqual(preview.map(item => item.id), ['catalog', 'orders-only']);
   const affected = servers.detachModels(dir, ['orders']);
   assert.deepEqual(affected.map(item => ({ id: item.id, disabled: item.disabled })), [
-    { id: 'default', disabled: false }, { id: 'orders-only', disabled: true },
+    { id: 'catalog', disabled: false }, { id: 'orders-only', disabled: true },
   ]);
   const after = new Map(servers.read(dir).servers.map(item => [item.id, item]));
-  assert.deepEqual(after.get('default').modelIds, ['finance']);
+  assert.deepEqual(after.get('catalog').modelIds, ['finance']);
   assert.equal(after.get('orders-only').enabled, false);
   assert.deepEqual(after.get('orders-only').modelIds, []);
   assert.deepEqual(after.get('finance-only').modelIds, ['finance']);
