@@ -43,7 +43,7 @@ done
 # 本机数据意外带入离线包；同时允许打包尚未提交但已验证的发布改动。
 git ls-files -co --exclude-standard -z | tar --null -T - -cf - | tar -xf - -C "$output_dir/source"
 rm -rf "$output_dir/source/.github" "$output_dir/source/test" "$output_dir/source/examples" \
-  "$output_dir/source/deploy" "$output_dir/source/docs"
+  "$output_dir/source/deploy"
 mkdir -p "$output_dir/source/state/schema" "$output_dir/source/state/modules" \
   "$output_dir/source/state/glossary" "$output_dir/source/state/openapi"
 touch "$output_dir/source/state/.gitkeep"

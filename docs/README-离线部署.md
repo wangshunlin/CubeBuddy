@@ -15,7 +15,7 @@ shasum -a 256 -c dist/cube-console-compose.tar.gz.sha256
 
 ## 文件
 
-- 源码包：源码、根目录 Compose、Gateway 配置和部署文档。
+- 源码包：源码、根目录 Compose、Gateway 配置和部署文档（含本文件）。
 - Docker 镜像包：按发布版本导出的 Cube Core、配置台和 Gateway 镜像。
 - `.env` 和 `state/`：目标环境专属数据，不进入 Git，也不放入公共离线包。
 
@@ -59,6 +59,33 @@ docker compose ps
 - Cube API/OpenAPI：`http://内网IP:18080`
 
 首次进入配置台后，在“数据源”页面填写内网数据库连接；业务术语通过业务术语模块导入；语义模型在“语义模型”页面导入 YAML。最终 OpenAPI 文件随配置台镜像初始化到 `state/openapi/openapi.yaml`，并在容器启动时根据 `CUBE_PUBLIC_BASE` 写入 `servers.url`。
+
+## MCP 接入
+
+先在配置台的“MCP 管理”中创建 MCP Server、绑定语义模型，并为该 Server 签发服务密钥。客户端必须使用 Server 的显式 Endpoint：
+
+```text
+http://内网IP:18080/mcp/<server-id>
+```
+
+传输协议为 `streamable-http`，请求需携带该 Server 专属密钥：
+
+```http
+Authorization: Bearer <MCP Server JWT>
+```
+
+`/mcp` 不提供默认服务，会返回 404；每个 MCP Server 的模型白名单和 JWT 均相互隔离。
+
+## 部署后验证
+
+```bash
+cd /opt/cube-console
+docker compose ps
+curl -fsS http://127.0.0.1:18080/readyz
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18080/mcp
+```
+
+`readyz` 应返回成功；最后一条命令应输出 `404`，表示默认 MCP 入口已关闭。随后从“MCP 管理”签发测试密钥，使用 `/mcp/<server-id>` 和 `Authorization: Bearer <MCP Server JWT>` 验证实际工具调用。
 
 ## 注意事项
 
