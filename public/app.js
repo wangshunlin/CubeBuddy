@@ -1936,6 +1936,9 @@ function realAutoModelModal() {
     body: `<div class="auto-model-form"><aside class="field auto-source-field" aria-label="数据源列表"><div class="auto-source-heading"><strong>数据源</strong></div><label class="auto-source-search"><span aria-hidden="true">⌕</span><input id="autoSourceSearch" type="search" placeholder="搜索数据源" aria-label="搜索数据源" autocomplete="off"></label><div class="auto-source-list" id="auto-source-list" role="listbox">${sourceOptions || '<span class="auto-source-empty">暂无数据源</span>'}</div></aside><section class="field auto-table-field" aria-label="物理表选择"><div class="auto-table-pane-head"><h3>选择物理表</h3></div><div class="auto-table-toolbar"><label class="auto-table-search"><span aria-hidden="true">⌕</span><input id="autoTableSearch" type="search" placeholder="搜索表名或中文注释" aria-label="搜索表名或中文注释" autocomplete="off"></label></div><div id="autoTablePanel" class="auto-table-panel"><div class="auto-table-loading">正在读取真实数据库结构…</div></div><div class="auto-table-foot"><div class="auto-table-foot-note"><i>i</i><span id="autoModelFootNote">请选择至少 1 张物理表</span></div><div class="auto-table-foot-actions"><button class="btn" id="autoModelCancel" type="button">取消</button><button class="btn primary" id="autoModelGenerate" type="button" disabled>生成模型</button></div></div></section></div>`,
     afterOpen: () => {
       const panel = $("#autoTablePanel");
+      $(".auto-table-toolbar").insertAdjacentHTML("afterbegin", '<label class="auto-database-field">数据库<select id="autoDatabase" aria-label="数据库" disabled><option value="">正在加载…</option></select></label>');
+      const databaseSelect = $("#autoDatabase");
+      let requestVersion = 0;
       const footNote = $("#autoModelFootNote");
       const sourceList = $("#auto-source-list");
       const sourceSearch = $("#autoSourceSearch");
@@ -1951,14 +1954,18 @@ function realAutoModelModal() {
         });
       };
       const loadTables = async () => {
+        const version = ++requestVersion;
+        const database = databaseSelect.value;
+        panel.onchange = null;
         panel.innerHTML = '<div class="auto-table-loading">正在读取真实数据库结构…</div>';
         setFootNote(0);
-        if (!sourceName) {
-          panel.innerHTML = '<div class="auto-table-empty">暂无数据源，请先新增并测试数据库连接。</div>';
+        if (!sourceName || !database) {
+          panel.innerHTML = '<div class="auto-table-empty">请选择数据库。</div>';
           return;
         }
         try {
-          const result = await realApi(`/api/db/tables?ds=${encodeURIComponent(sourceName)}`);
+          const result = await realApi(`/api/db/tables?ds=${encodeURIComponent(sourceName)}&db=${encodeURIComponent(database)}`);
+          if (version !== requestVersion || !panel.isConnected) return;
           const tables = result.tables || [];
           panel.innerHTML = tables.length
             ? `<div class="auto-table-fixed-head"><div class="auto-table-select-all"><label><input id="autoTableSelectAll" type="checkbox" aria-label="全选当前列表"></label><span class="auto-table-column-label">原始表名</span><span class="auto-table-column-label">表中文注释</span><span class="auto-table-column-label auto-table-rows-label">行数</span></div></div><div class="auto-table-scroll">${tables.map((item) => `<label class="auto-table-option"><input type="checkbox" name="autoTable" value="${escapeHtml(item.full)}" data-db="${escapeHtml(item.db)}" data-table="${escapeHtml(item.name)}"><span class="auto-table-name mono">${escapeHtml(item.name)}</span><span class="auto-table-comment">${item.comment ? escapeHtml(item.comment) : "暂无中文注释"}</span><span class="auto-table-rows">${escapeHtml(item.rows ?? "—")}</span></label>`).join("")}<div id="autoTableNoMatch" class="auto-table-empty" hidden>没有匹配的物理表</div></div>`
@@ -1999,7 +2006,47 @@ function realAutoModelModal() {
             updateSelection();
           };
           applyFilter();
-        } catch (error) { panel.innerHTML = `<div class="auto-table-empty auto-table-error">表清单读取失败：${escapeHtml(error.message)}</div>`; }
+        } catch (error) {
+          if (version !== requestVersion || !panel.isConnected) return;
+          panel.innerHTML = `<div class="auto-table-empty auto-table-error">表清单读取失败：${escapeHtml(error.message)}</div>`;
+        }
+      };
+      const loadDatabases = async () => {
+        const version = ++requestVersion;
+        setFootNote(0);
+        panel.onchange = null;
+        $("#autoTableSearch").value = "";
+        databaseSelect.disabled = true;
+        databaseSelect.innerHTML = '<option value="">正在加载…</option>';
+        panel.innerHTML = '<div class="auto-table-loading">正在读取数据库列表…</div>';
+        if (!sourceName) {
+          databaseSelect.innerHTML = '<option value="">暂无数据库</option>';
+          panel.innerHTML = '<div class="auto-table-empty">暂无数据源，请先新增并测试数据库连接。</div>';
+          return;
+        }
+        try {
+          const result = await realApi(`/api/db/databases?ds=${encodeURIComponent(sourceName)}`);
+          if (version !== requestVersion || !panel.isConnected) return;
+          const databases = result.databases || [];
+          if (!databases.length) {
+            databaseSelect.innerHTML = '<option value="">暂无数据库</option>';
+            panel.innerHTML = '<div class="auto-table-empty">未发现可访问的数据库，请检查账号权限。</div>';
+            return;
+          }
+          databaseSelect.innerHTML = databases.map(({ name }) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+          const defaultDatabase = dataSources.find((source) => source.name === sourceName)?.database;
+          if (databases.some(({ name }) => name === defaultDatabase)) databaseSelect.value = defaultDatabase;
+          databaseSelect.disabled = false;
+          await loadTables();
+        } catch (error) {
+          if (version !== requestVersion || !panel.isConnected) return;
+          databaseSelect.innerHTML = '<option value="">加载失败</option>';
+          panel.innerHTML = `<div class="auto-table-empty auto-table-error">数据库列表读取失败：${escapeHtml(error.message)}</div>`;
+        }
+      };
+      databaseSelect.onchange = () => {
+        $("#autoTableSearch").value = "";
+        loadTables();
       };
       sourceSearch?.addEventListener("input", filterSources);
       sourceList?.addEventListener("click", (event) => {
@@ -2011,12 +2058,12 @@ function realAutoModelModal() {
           item.classList.toggle("active", active);
           item.setAttribute("aria-selected", String(active));
         });
-        loadTables();
+        loadDatabases();
       });
       $("#autoModelCancel")?.addEventListener("click", closeModal);
       generateButton?.addEventListener("click", () => $("#modalConfirm")?.click());
       filterSources();
-      loadTables();
+      loadDatabases();
     },
     onConfirm: async () => {
       const selected = $$('input[name="autoTable"]:checked', $("#autoTablePanel"));
