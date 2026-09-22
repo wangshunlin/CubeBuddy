@@ -1246,12 +1246,18 @@ function checkCommonYamlMistakes(content) {
   }
 }
 
+// 网关子路径部署适配（如经 ISG 网关发布在 /znwsglzx/ 前缀下）：
+// 由当前页面地址推导挂载前缀，接口请求自动带上前缀；部署在根路径时前缀为空串，行为与原来完全一致。
+// 前提：页面地址末尾带斜杠（网关只注册带斜杠形态）；如需强制指定，可在 index.html 注入 window.__CUBE_BASE_PATH__ 覆盖。
+const CONSOLE_BASE_PATH = (window.__CUBE_BASE_PATH__ || new URL(".", location.href).pathname).replace(/\/$/, "");
+const apiUrl = (path) => CONSOLE_BASE_PATH + path;
+
 async function realApi(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   const token = localStorage.getItem(REAL_TOKEN_KEY);
   if (token) headers.Authorization = `Bearer ${token}`;
   if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(apiUrl(path), { ...options, headers });
   if (response.status === 401) {
     showRealLogin("管理员令牌已失效，请重新登录");
     throw new Error("未授权");
@@ -1593,7 +1599,7 @@ function syncStructuredYamlPreview(data, kind) {
 
 async function loadRealData({ keepPage = true } = {}) {
   const [status, live, ds, modelList, terms, info, tools, logs, environment, jwtList, mcpList] = await Promise.all([
-    realApi("/api/status"), fetch("/livez", { cache: "no-store" }).then((response) => ({ status: response.status })).catch(() => ({ status: 0 })), realApi("/api/datasources"), realApi("/api/models"),
+    realApi("/api/status"), fetch(apiUrl("/livez"), { cache: "no-store" }).then((response) => ({ status: response.status })).catch(() => ({ status: 0 })), realApi("/api/datasources"), realApi("/api/models"),
     realApi("/api/glossary"), realApi("/api/mcp-info"), realApi("/api/tools").catch(() => ({ cubeCore: [] })),
     realApi("/api/logs"), realApi("/api/environment"), realApi("/api/jwt/tokens").catch(() => ({ tokens: [] })),
     realApi("/api/mcp-servers").catch(() => ({ servers: [], availableModels: [] })),
@@ -2156,7 +2162,7 @@ async function saveRealModel(apply, { silent = false, preserveView = false, onFa
 }
 
 async function downloadProtected(path, filename, type = "application/octet-stream") {
-  const response = await fetch(path, { headers: { Authorization: `Bearer ${localStorage.getItem(REAL_TOKEN_KEY) || ""}` } });
+  const response = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${localStorage.getItem(REAL_TOKEN_KEY) || ""}` } });
   if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`);
   const blob = await response.blob();
   const url = URL.createObjectURL(new Blob([blob], { type }));
@@ -2305,7 +2311,7 @@ async function exportCurrentModel() {
       onConfirm: async () => {
         setModalBusy();
         try {
-          const response = await fetch("/api/model-transfer/export", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem(REAL_TOKEN_KEY) || ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected] }) });
+          const response = await fetch(apiUrl("/api/model-transfer/export"), { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem(REAL_TOKEN_KEY) || ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected] }) });
           if (!response.ok) throw new Error((await response.json()).error || "导出失败");
           const url = URL.createObjectURL(await response.blob());
           const link = document.createElement("a"); link.href = url; link.download = `semantic-models-${new Date().toISOString().slice(0,10)}.zip`; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -2700,7 +2706,7 @@ $("#loginBtn").onclick = async () => {
   const token = $("#loginToken").value.trim();
   if (!token) return showRealLogin("请输入管理员令牌");
   try {
-    const response = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
+    const response = await fetch(apiUrl("/api/login"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
     if (!response.ok) throw new Error("令牌错误");
     localStorage.setItem(REAL_TOKEN_KEY, token); $("#loginScreen").classList.remove("show");
     await loadRealData({ keepPage: false }); toast("已接入真实 Cube 生产环境");
