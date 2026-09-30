@@ -36,6 +36,18 @@ const ENV_PATH = path.join(DEPLOY_DIR, '.env');
 const SETTINGS_PATH = path.join(DEPLOY_DIR, 'console-settings.json');
 const CONSOLE_STATE_PATH = path.join(DEPLOY_DIR, '.cube-console-state.json');
 const TOKEN_REGISTRY_PATH = path.join(DEPLOY_DIR, 'jwt-token-registry.json');
+
+// 配置台以容器内 /tmp 为项目目录执行 docker compose；此时若宿主路径变量是相对路径，
+// 宿主机挂载会被解析到 /tmp（不存在 → Docker 建空目录），Cube 因此编译不到模型，
+// 表现为「Cube 编译后缺少模型」。启动即告警，避免问题在「批量应用」时以难懂的形式暴露。
+if (process.env.CUBE_COMPOSE_FILE) {
+  ['CUBE_DEPLOY_HOST_DIR', 'CUBE_CONSOLE_SOURCE_HOST_DIR', 'CUBE_COMPOSE_ENV_HOST_PATH'].forEach((key) => {
+    const value = String(process.env[key] || '').trim();
+    if (value && !path.isAbsolute(value)) {
+      console.warn(`[warn] ${key}=${value} 是相对路径，配置台重建服务时宿主机挂载会指向 /tmp，请改为绝对路径。`);
+    }
+  });
+}
 // MCP SDK 的 AuthInfo 要求 expiresAt；此值仅供当前请求的 SDK 上下文使用，
 // 不会写入 JWT，因此不会改变服务密钥的永久有效语义。
 const NON_EXPIRING_AUTH_INFO_EXPIRY = 253402300799; // 9999-12-31T23:59:59Z

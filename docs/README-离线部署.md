@@ -42,6 +42,13 @@ chmod 600 .env
 - `CUBEJS_DB_PASS`
 - `CUBE_PUBLIC_BASE=http://内网IP:18080`
 - `CONSOLE_PUBLIC_BASE=http://内网IP:18081`
+- `CUBE_DEPLOY_HOST_DIR=/opt/cube-console/state`（**必须绝对路径**）
+- `CUBE_CONSOLE_SOURCE_HOST_DIR=/opt/cube-console`（**必须绝对路径**）
+- `CUBE_COMPOSE_ENV_HOST_PATH=/opt/cube-console/.env`（**必须绝对路径**）
+
+> ⚠️ 最后三项必须绝对路径：配置台重建服务时用的是它容器内 `/tmp` 的 compose 文件副本，
+> Compose 会把 `/tmp` 当作项目目录，相对路径会被解析成 `/tmp/state`、`/tmp/.env` 等
+> 宿主机上不存在的路径（Docker 会自动创建空目录），症状是「Cube 编译后缺少模型」或模型列表为空。
 
 创建状态目录并启动。由于镜像已经通过 `docker load` 导入，内网部署使用 `--no-build`，避免尝试访问 Docker Hub：
 

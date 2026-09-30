@@ -183,10 +183,17 @@ docker compose -f compose.yml -f compose.build.yml --env-file .env up -d --force
 | `CONSOLE_IMAGE` | CubeBuddy 配置台镜像 | `cube-console:local` |
 | `CUBE_UI_ADMIN_TOKEN` | 管理接口和配置台登录令牌 | 必填 |
 | `CUBEJS_API_SECRET` | Cube JWT 签名密钥 | 必填 |
-| `CUBE_DEPLOY_HOST_DIR` | 宿主机状态目录 | `./state` |
+| `CUBE_DEPLOY_HOST_DIR` | 宿主机状态目录（**必须绝对路径**） | `/opt/cube-console/state` |
+| `CUBE_CONSOLE_SOURCE_HOST_DIR` | 宿主机项目目录（配置台重建服务时读取 compose.yml，**必须绝对路径**） | `/opt/cube-console` |
+| `CUBE_COMPOSE_ENV_HOST_PATH` | 宿主机 `.env` 路径（**必须绝对路径**） | `/opt/cube-console/.env` |
 | `CUBEJS_DB_*` | 默认数据源连接 | 按环境设置 |
 
 完整模板见 [`.env.example`](./.env.example)。
+
+> ⚠️ 上面三个 `*_HOST_*` 变量必须是**宿主机绝对路径**。配置台执行 `docker compose` 时用的是它
+> 容器内 `/tmp` 的 compose 文件副本，Compose 会把该文件所在目录（`/tmp`）当作项目目录，
+> 相对路径会被解析成 `/tmp/state`、`/tmp/.env` 等宿主机上不存在的路径（Docker 会自动创建空目录），
+> 症状是模型列表为空、「Cube 编译后缺少模型」。服务端会校验并直接报错提示，不会静默生效。
 
 ### 文件边界
 

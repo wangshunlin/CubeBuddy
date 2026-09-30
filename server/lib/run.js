@@ -39,7 +39,31 @@ function cubeNameKey(value) {
   return String(value || '').trim().replace(/\.ya?ml$/i, '');
 }
 
+// 配置台把宿主 compose.yml / .env 挂到容器内的 /tmp，再以该文件执行 docker compose。
+// Compose 会把「compose 文件所在目录」当作项目目录，于是 compose 里的相对路径
+// （挂载源、env_file）都会被解析成 /tmp/...；而 bind 挂载源最终由宿主机解析，
+// 结果指向宿主机上并不存在的 /tmp/state（Docker 会自动创建空目录），
+// 典型现象是 cube_api 看不到模型文件，报「Cube 编译后缺少模型」。
+// 因此：只要是通过外部 compose 文件运行（配置台场景），这些宿主路径就必须是绝对路径。
+const HOST_PATH_VARS = ['CUBE_DEPLOY_HOST_DIR', 'CUBE_CONSOLE_SOURCE_HOST_DIR', 'CUBE_COMPOSE_ENV_HOST_PATH'];
+
+function assertAbsoluteHostPaths() {
+  // 未指定外部 compose 文件时（手工在项目目录执行 compose），相对路径是安全的，保持原行为。
+  if (!process.env.CUBE_COMPOSE_FILE) return;
+  const relative = HOST_PATH_VARS
+    .map((key) => [key, String(process.env[key] || '').trim()])
+    .filter(([, value]) => value && !path.isAbsolute(value));
+  if (!relative.length) return;
+  throw new Error(
+    `${relative.map(([key, value]) => `${key}=${value}`).join('、')} 必须是绝对路径。`
+    + '配置台以容器内 /tmp 为项目目录执行 docker compose，相对路径会把宿主机挂载指向 /tmp，'
+    + '导致 Cube 看不到模型文件（典型报错：「Cube 编译后缺少模型」）。'
+    + '请在 .env 中改为宿主机上的绝对路径，例如 CUBE_DEPLOY_HOST_DIR=/opt/cube-console/state。',
+  );
+}
+
 function compose(deployDir, args) {
+  assertAbsoluteHostPaths();
   return run('docker', ['compose', '-f', composeFile(deployDir), ...args]);
 }
 
@@ -113,6 +137,29 @@ async function waitForCube(apiBase, secret, timeoutMs = 60000, expectedCubes = [
   throw new Error(`Cube 启动超时：${lastError}`);
 }
 
+// 「缺少模型」时补充可定位的对比信息：容器内模型数 vs 部署目录模型数。
+// 两者不一致通常说明挂载路径解析错误（宿主路径变量写成了相对路径）。
+async function mountDiagnosis(deployDir) {
+  const probe = await composeExec(
+    deployDir, 'cube_api',
+    ['sh', '-c', 'ls -1 model/cubes 2>/dev/null | wc -l'],
+    { timeout: 15000 },
+  );
+  const inContainer = (probe.stdout || '').trim() || '?';
+  let onDisk = '?';
+  try {
+    onDisk = String(
+      fs.readdirSync(path.join(deployDir, 'schema')).filter((name) => /\.ya?ml$/i.test(name)).length,
+    );
+  } catch (_) { /* 部署目录不可读时忽略统计 */ }
+  const numbers = '（cube_api 容器内模型数=' + inContainer + '，部署目录模型数=' + onDisk + '）';
+  if (inContainer === '0' && onDisk !== '0') {
+    return numbers + ' → 容器没看到模型文件，通常是挂载路径解析错误：请确认 .env 中 '
+      + 'CUBE_DEPLOY_HOST_DIR / CUBE_CONSOLE_SOURCE_HOST_DIR / CUBE_COMPOSE_ENV_HOST_PATH 都是宿主机绝对路径';
+  }
+  return numbers;
+}
+
 async function verifyCubeModels(deployDir, expectedCubes = []) {
   const probe = [
     "const { FileRepository } = require('@cubejs-backend/shared');",
@@ -133,7 +180,7 @@ async function verifyCubeModels(deployDir, expectedCubes = []) {
   const loaded = new Set((Array.isArray(payload.names) ? payload.names : []).map(cubeNameKey));
   const expected = [...new Set((Array.isArray(expectedCubes) ? expectedCubes : []).map(cubeNameKey).filter(Boolean))];
   const missing = expected.filter((name) => !loaded.has(name));
-  if (missing.length) throw new Error(`Cube 编译后缺少模型：${missing.join('、')}`);
+  if (missing.length) throw new Error(`Cube 编译后缺少模型：${missing.join('、')}${await mountDiagnosis(deployDir)}`);
   return { names: payload.names || [] };
 }
 
