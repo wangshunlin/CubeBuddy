@@ -415,22 +415,24 @@ function renderModelCatalog(model) {
     const open = state.modelCatalogCollapsed[key] !== true;
     const groupKey = `catalog-group-${index}`;
     return `<section class="catalog-source ${open ? "open" : ""}" data-catalog-group>
-      <button class="catalog-source-toggle" type="button" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-controls="${groupKey}"><span class="catalog-caret" aria-hidden="true">⌄</span><span class="catalog-source-icon">${escapeHtml(group.sourceType.slice(0, 2).toUpperCase())}</span><span class="catalog-source-name" title="${escapeHtml(group.sourceName)}">${escapeHtml(group.sourceName)}</span><span class="catalog-source-count">${group.models.length}</span></button>
-      <div class="catalog-source-content" id="${groupKey}"><div class="catalog-database"><div class="catalog-db-label" title="${escapeHtml(group.database)}"><span class="catalog-db-mark">▦</span><span>${escapeHtml(group.database)}</span></div><div class="catalog-models">${group.models.map(item => {
+      <button class="catalog-source-toggle" type="button" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-controls="${groupKey}"><span class="catalog-caret" aria-hidden="true">⌄</span><span class="catalog-source-icon">${escapeHtml(group.sourceType.slice(0, 2).toUpperCase())}</span><span class="catalog-source-name" title="${escapeHtml(group.sourceName)}">${escapeHtml(group.sourceName)}</span><span class="catalog-source-database" title="${escapeHtml(group.database)}">· ${escapeHtml(group.database)}</span><span class="catalog-source-count">${group.models.length}</span></button>
+      <div class="catalog-source-content" id="${groupKey}"><div class="catalog-database"><div class="catalog-models">${group.models.map(item => {
         const selected = item.id === model.id;
         const statusKey = item.status === "已加载" ? "loaded" : "draft";
         const queryText = `${item.name} ${item.id} ${item.source}`.toLowerCase();
         return `<button class="catalog-model ${selected ? "active" : ""}" type="button" data-model="${escapeHtml(item.id)}" data-model-status="${statusKey}" data-model-search="${escapeHtml(queryText)}"><span class="catalog-model-glyph">T</span><span class="catalog-model-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</small></span>${modelStatusDot(item.status)}</button>`;
       }).join("")}</div></div></div></section>`;
   }).join("");
-  return `<div class="catalog-heading"><div class="catalog-heading-title"><strong>模型目录</strong><span class="catalog-count">${models.length} 个模型</span><div class="model-more model-add"><button class="model-add-button" data-action="toggle-model-more" aria-expanded="false" aria-label="新建模型">＋</button><div class="model-more-menu hidden"><button class="btn" data-action="new-model">新建</button><button class="btn" data-action="auto-model">自动建模</button></div></div></div>
-    <label class="catalog-search">⌕<input id="modelSearch" value="${escapeHtml(state.modelCatalogQuery)}" placeholder="搜索名称、标识或表名" aria-label="搜索模型"></label>
+  return `<div class="catalog-heading"><div class="catalog-heading-title"><strong>模型目录</strong><div class="model-more model-add"><button class="model-add-button" data-action="toggle-model-more" aria-expanded="false" aria-label="新建模型">＋</button><div class="model-more-menu hidden"><button class="btn" data-action="new-model">新建</button><button class="btn" data-action="auto-model">自动建模</button></div></div></div>
+    <label class="catalog-search model-search"><svg class="design-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><input type="search" id="modelSearch" value="${escapeHtml(state.modelCatalogQuery)}" placeholder="搜索名称、标识或表名" aria-label="搜索模型"><button type="button" class="design-search-clear" id="modelSearchClear" aria-label="清空搜索" hidden>×</button></label>
     <div class="catalog-filters">${filters.map(([id, label, count]) => `<button type="button" class="catalog-filter ${state.modelCatalogFilter === id ? "active" : ""}" data-catalog-filter="${id}">${label}<span>${count}</span></button>`).join("")}</div></div>
     <div class="catalog-tree">${tree}<div class="catalog-empty ${visibleCount ? "hidden" : ""}" data-catalog-empty>没有匹配的模型</div></div>`;
 }
 
 function applyModelCatalogFilters() {
   const query = state.modelCatalogQuery.trim().toLowerCase();
+  const clear = $("#modelSearchClear");
+  if (clear) { clear.hidden = !query; clear.onclick = () => { state.modelCatalogQuery = ""; $("#modelSearch").value = ""; applyModelCatalogFilters(); $("#modelSearch").focus(); }; }
   let visibleCount = 0;
   $$(".catalog-source").forEach(group => {
     let groupCount = 0;
@@ -2004,40 +2006,33 @@ function realNewModelModal() {
 
 function realAutoModelModal() {
   let sourceName = dataSources[0]?.name || "";
+  let databaseName = "";
+  const selections = new Map();
+  const selectionKey = () => JSON.stringify([sourceName, databaseName]);
   const sourceOptions = dataSources.map((item, index) => {
     const type = item.type || "MySQL";
-    return `<button class="auto-source-option${index === 0 ? " active" : ""}" type="button" role="option" aria-selected="${index === 0}" data-source="${escapeHtml(item.name)}"><span class="auto-source-icon">${escapeHtml(type.slice(0, 1).toUpperCase())}</span><span class="auto-source-option-main"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(type)} · ${escapeHtml(item.database || "暂无数据库名称")}</small></span></button>`;
+    return `<button class="auto-source-option${index === 0 ? " active" : ""}" type="button" role="option" aria-selected="${index === 0}" data-source="${escapeHtml(item.name)}"><span class="auto-source-icon">${escapeHtml(type.slice(0, 1).toUpperCase())}</span><span class="auto-source-option-main"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(type)}</small></span></button>`;
   }).join("");
   openModal({
     title: "自动建模",
-    sub: "",
+    sub: "选择物理表，生成模型草稿；检查后再发布。",
     icon: "◇",
     wide: true,
     modalClass: "auto-model-modal",
-    confirm: "生成模型",
-    body: `<div class="auto-model-form"><aside class="field auto-source-field" aria-label="数据源列表"><div class="auto-source-heading"><strong>数据源</strong></div><label class="auto-source-search"><span aria-hidden="true">⌕</span><input id="autoSourceSearch" type="search" placeholder="搜索数据源" aria-label="搜索数据源" autocomplete="off"></label><div class="auto-source-list" id="auto-source-list" role="listbox">${sourceOptions || '<span class="auto-source-empty">暂无数据源</span>'}</div></aside><section class="field auto-table-field" aria-label="物理表选择"><div class="auto-table-pane-head"><h3>选择物理表</h3></div><div class="auto-table-toolbar"><label class="auto-table-search"><span aria-hidden="true">⌕</span><input id="autoTableSearch" type="search" placeholder="搜索表名或中文注释" aria-label="搜索表名或中文注释" autocomplete="off"></label></div><div id="autoTablePanel" class="auto-table-panel"><div class="auto-table-loading">正在读取真实数据库结构…</div></div><div class="auto-table-foot"><div class="auto-table-foot-note"><i>i</i><span id="autoModelFootNote">请选择至少 1 张物理表</span></div><div class="auto-table-foot-actions"><button class="btn" id="autoModelCancel" type="button">取消</button><button class="btn primary" id="autoModelGenerate" type="button" disabled>生成模型</button></div></div></section></div>`,
+    confirm: "生成草稿",
+    body: `<div class="auto-model-form"><aside class="field auto-source-field" aria-label="数据源列表"><section class="auto-source-section"><div class="auto-source-heading"><strong>数据源</strong></div><div class="auto-source-list" id="auto-source-list" role="listbox">${sourceOptions || '<span class="auto-source-empty">暂无数据源</span>'}</div></section><section class="auto-database-section"><div class="auto-source-heading"><strong>数据库</strong></div><div id="autoDatabaseList" class="auto-database-list"></div></section></aside><section class="field auto-table-field" aria-label="物理表选择"><div class="auto-table-pane-head"><h3>选择物理表</h3></div><div class="auto-table-toolbar"><label class="auto-table-search"><svg class="design-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><input id="autoTableSearch" type="search" placeholder="搜索表名或中文注释" aria-label="搜索表名或中文注释" autocomplete="off"></label></div><label class="auto-selected-filter type-meta"><input type="checkbox" id="autoOnlySelected">仅看已选 <span id="autoSelectedCount">0</span></label><div id="autoTablePanel" class="auto-table-panel"><div class="auto-table-loading">正在读取真实数据库结构…</div></div><div class="auto-table-foot"><div class="auto-table-foot-actions"><button class="btn" id="autoModelCancel" type="button">取消</button><button class="btn primary" id="autoModelGenerate" type="button" disabled>生成模型</button></div></div></section></div>`,
     afterOpen: () => {
       const panel = $("#autoTablePanel");
-      $(".auto-table-toolbar").insertAdjacentHTML("afterbegin", '<label class="auto-database-field">数据库<select id="autoDatabase" aria-label="数据库" disabled><option value="">正在加载…</option></select></label>');
-      const databaseSelect = $("#autoDatabase");
+      const databaseList = $("#autoDatabaseList");
       let requestVersion = 0;
-      const footNote = $("#autoModelFootNote");
       const sourceList = $("#auto-source-list");
-      const sourceSearch = $("#autoSourceSearch");
       const generateButton = $("#autoModelGenerate");
-      const setFootNote = (count) => { if (footNote) footNote.textContent = count ? `已选择 ${count} 张表` : "请选择至少 1 张物理表"; if (generateButton) generateButton.disabled = count === 0; };
+      const setFootNote = (count) => { $("#autoSelectedCount").textContent = count; generateButton.disabled = count === 0; generateButton.textContent = count ? `生成 ${count} 个草稿` : "生成草稿"; };
       setFootNote(0);
-      const filterSources = () => {
-        const query = sourceSearch?.value.trim().toLowerCase() || "";
-        sourceList?.querySelectorAll("[data-source]").forEach((option) => {
-          const matched = !query || option.textContent.toLowerCase().includes(query);
-          option.hidden = !matched;
-          option.style.display = matched ? "flex" : "none";
-        });
-      };
       const loadTables = async () => {
         const version = ++requestVersion;
-        const database = databaseSelect.value;
+        const database = databaseName;
+        const key = selectionKey();
         panel.onchange = null;
         panel.innerHTML = '<div class="auto-table-loading">正在读取真实数据库结构…</div>';
         setFootNote(0);
@@ -2058,12 +2053,16 @@ function realAutoModelModal() {
           const noMatch = $("#autoTableNoMatch");
           const rows = $$(".auto-table-option", panel);
           const inputs = $$('input[name="autoTable"]', panel);
+          const saved = selections.get(key) || new Set();
+          inputs.forEach(input => { input.checked = saved.has(input.value); });
           const updateSelection = () => {
             const visibleInputs = rows.filter((row) => !row.hidden).map((row) => $("input", row));
             const selectedCount = inputs.filter((input) => input.checked).length;
             const visibleSelected = visibleInputs.filter((input) => input.checked).length;
             selectAll.checked = visibleInputs.length > 0 && visibleSelected === visibleInputs.length;
             selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visibleInputs.length;
+            selections.set(key, new Set(inputs.filter(input => input.checked).map(input => input.value)));
+            $("#autoTableSelectAll").disabled = visibleInputs.length === 0;
             setFootNote(selectedCount);
           };
           const applyFilter = () => {
@@ -2072,7 +2071,7 @@ function realAutoModelModal() {
             rows.forEach((row) => {
               const input = $("input", row);
               const text = `${input.dataset.table} ${$(".auto-table-comment", row).textContent}`.toLowerCase();
-              const matched = !query || text.includes(query);
+              const matched = (!query || text.includes(query)) && (!$("#autoOnlySelected").checked || input.checked);
               row.hidden = !matched;
               row.style.display = matched ? "grid" : "none";
               if (!row.hidden) visibleCount += 1;
@@ -2080,12 +2079,13 @@ function realAutoModelModal() {
             noMatch.hidden = visibleCount > 0;
             updateSelection();
           };
+          $("#autoOnlySelected").onchange = applyFilter;
           search.oninput = applyFilter;
           search.onsearch = applyFilter;
           search.onkeyup = applyFilter;
           panel.onchange = (event) => {
             if (event.target === selectAll) rows.filter((row) => !row.hidden).forEach((row) => { $("input", row).checked = selectAll.checked; });
-            updateSelection();
+            applyFilter();
           };
           applyFilter();
         } catch (error) {
@@ -2098,11 +2098,12 @@ function realAutoModelModal() {
         setFootNote(0);
         panel.onchange = null;
         $("#autoTableSearch").value = "";
-        databaseSelect.disabled = true;
-        databaseSelect.innerHTML = '<option value="">正在加载…</option>';
+        databaseName = "";
+        $("#autoOnlySelected").checked = false;
+        databaseList.textContent = "正在加载…";
         panel.innerHTML = '<div class="auto-table-loading">正在读取数据库列表…</div>';
         if (!sourceName) {
-          databaseSelect.innerHTML = '<option value="">暂无数据库</option>';
+          databaseList.textContent = "暂无数据库";
           panel.innerHTML = '<div class="auto-table-empty">暂无数据源，请先新增并测试数据库连接。</div>';
           return;
         }
@@ -2111,29 +2112,32 @@ function realAutoModelModal() {
           if (version !== requestVersion || !panel.isConnected) return;
           const databases = result.databases || [];
           if (!databases.length) {
-            databaseSelect.innerHTML = '<option value="">暂无数据库</option>';
+            databaseList.textContent = "暂无数据库";
             panel.innerHTML = '<div class="auto-table-empty">未发现可访问的数据库，请检查账号权限。</div>';
             return;
           }
-          databaseSelect.innerHTML = databases.map(({ name }) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
           const defaultDatabase = dataSources.find((source) => source.name === sourceName)?.database;
-          if (databases.some(({ name }) => name === defaultDatabase)) databaseSelect.value = defaultDatabase;
-          databaseSelect.disabled = false;
+          databaseName = databases.some(({ name }) => name === defaultDatabase) ? defaultDatabase : databases[0].name;
+          databaseList.innerHTML = databases.map(({ name }) => `<button type="button" class="auto-database-option ${name === databaseName ? "active" : ""}" data-database="${escapeHtml(name)}" aria-pressed="${name === databaseName}" title="${escapeHtml(name)}">${escapeHtml(name)}</button>`).join("");
           await loadTables();
         } catch (error) {
           if (version !== requestVersion || !panel.isConnected) return;
-          databaseSelect.innerHTML = '<option value="">加载失败</option>';
+          databaseList.textContent = "加载失败";
           panel.innerHTML = `<div class="auto-table-empty auto-table-error">数据库列表读取失败：${escapeHtml(error.message)}</div>`;
         }
       };
-      databaseSelect.onchange = () => {
+      databaseList.onclick = (event) => {
+        const option = event.target.closest("[data-database]");
+        if (!option || option.dataset.database === databaseName) return;
+        databaseName = option.dataset.database;
+        databaseList.querySelectorAll("[data-database]").forEach(item => { const active = item === option; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
         $("#autoTableSearch").value = "";
+        $("#autoOnlySelected").checked = false;
         loadTables();
       };
-      sourceSearch?.addEventListener("input", filterSources);
       sourceList?.addEventListener("click", (event) => {
         const option = event.target.closest("[data-source]");
-        if (!option) return;
+        if (!option || option.dataset.source === sourceName) return;
         sourceName = option.dataset.source;
         sourceList.querySelectorAll(".auto-source-option").forEach((item) => {
           const active = item === option;
@@ -2144,7 +2148,6 @@ function realAutoModelModal() {
       });
       $("#autoModelCancel")?.addEventListener("click", closeModal);
       generateButton?.addEventListener("click", () => $("#modalConfirm")?.click());
-      filterSources();
       loadDatabases();
     },
     onConfirm: async () => {
