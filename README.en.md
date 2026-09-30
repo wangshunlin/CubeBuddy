@@ -221,7 +221,7 @@ The transport is Streamable HTTP. Clients authenticate with:
 Authorization: Bearer <CubeBuddy JWT>
 ~~~
 
-Each JWT can access only its MCP Server. The model allowlist is checked during metadata discovery, model details, dimension search, dry runs, and queries. The legacy `/mcp` path maps to the `default` Server.
+Each JWT can access only its MCP Server. The model allowlist is checked during metadata discovery, model details, dimension search, dry runs, and queries. Clients must use an explicit `/mcp/<server-id>` endpoint; `/mcp` does not provide a default Server.
 
 ## OpenAPI and REST
 

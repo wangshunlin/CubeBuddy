@@ -9,6 +9,9 @@ const state = {
   modelState: "applied",
   // 放弃当前页面修改后，仅隐藏这一次的状态提示；模型本身仍保留已保存草稿状态。
   modelStatusHidden: false,
+  modelCatalogQuery: "",
+  modelCatalogFilter: "all",
+  modelCatalogCollapsed: {},
   glossaryQuery: "",
   monitorLogView: "raw",
   queryOutputTab: "result",
@@ -389,6 +392,63 @@ function currentModelData() {
   return model ? modelData[model.id] : null;
 }
 
+function modelCatalogGroups() {
+  const groups = new Map();
+  for (const model of models) {
+    const data = modelData[model.id];
+    const sourceName = data?.form?.source || String(model.source || "").split(".")[0] || "default";
+    const source = dataSources.find(item => item.name === sourceName);
+    const database = source?.database || data?.form?.table?.split(".")[0] || "默认数据库";
+    const key = `${sourceName}::${database}`;
+    if (!groups.has(key)) groups.set(key, { key, sourceName, sourceType: source?.type || "数据源", database, models: [] });
+    groups.get(key).models.push(model);
+  }
+  return [...groups.values()];
+}
+
+function renderModelCatalog(model) {
+  const groups = modelCatalogGroups();
+  const visibleCount = groups.reduce((count, group) => count + group.models.filter(item => state.modelCatalogFilter === "all" || (state.modelCatalogFilter === "loaded" ? item.status === "已加载" : item.status === "草稿")).length, 0);
+  const filters = [["all", "全部", models.length], ["loaded", "已加载", models.filter(item => item.status === "已加载").length], ["draft", "草稿", models.filter(item => item.status === "草稿").length]];
+  const tree = groups.map((group, index) => {
+    const key = group.key;
+    const open = state.modelCatalogCollapsed[key] !== true;
+    const groupKey = `catalog-group-${index}`;
+    return `<section class="catalog-source ${open ? "open" : ""}" data-catalog-group>
+      <button class="catalog-source-toggle" type="button" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-controls="${groupKey}"><span class="catalog-caret" aria-hidden="true">⌄</span><span class="catalog-source-icon">${escapeHtml(group.sourceType.slice(0, 2).toUpperCase())}</span><span class="catalog-source-name" title="${escapeHtml(group.sourceName)}">${escapeHtml(group.sourceName)}</span><span class="catalog-source-count">${group.models.length}</span></button>
+      <div class="catalog-source-content" id="${groupKey}"><div class="catalog-database"><div class="catalog-db-label" title="${escapeHtml(group.database)}"><span class="catalog-db-mark">▦</span><span>${escapeHtml(group.database)}</span></div><div class="catalog-models">${group.models.map(item => {
+        const selected = item.id === model.id;
+        const statusKey = item.status === "已加载" ? "loaded" : "draft";
+        const queryText = `${item.name} ${item.id} ${item.source}`.toLowerCase();
+        return `<button class="catalog-model ${selected ? "active" : ""}" type="button" data-model="${escapeHtml(item.id)}" data-model-status="${statusKey}" data-model-search="${escapeHtml(queryText)}"><span class="catalog-model-glyph">T</span><span class="catalog-model-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</small></span>${modelStatusDot(item.status)}</button>`;
+      }).join("")}</div></div></div></section>`;
+  }).join("");
+  return `<div class="catalog-heading"><div class="catalog-heading-title"><strong>模型目录</strong><span class="catalog-count">${models.length} 个模型</span><div class="model-more model-add"><button class="model-add-button" data-action="toggle-model-more" aria-expanded="false" aria-label="新建模型">＋</button><div class="model-more-menu hidden"><button class="btn" data-action="new-model">新建</button><button class="btn" data-action="auto-model">自动建模</button></div></div></div>
+    <label class="catalog-search">⌕<input id="modelSearch" value="${escapeHtml(state.modelCatalogQuery)}" placeholder="搜索名称、标识或表名" aria-label="搜索模型"></label>
+    <div class="catalog-filters">${filters.map(([id, label, count]) => `<button type="button" class="catalog-filter ${state.modelCatalogFilter === id ? "active" : ""}" data-catalog-filter="${id}">${label}<span>${count}</span></button>`).join("")}</div></div>
+    <div class="catalog-tree">${tree}<div class="catalog-empty ${visibleCount ? "hidden" : ""}" data-catalog-empty>没有匹配的模型</div></div>`;
+}
+
+function applyModelCatalogFilters() {
+  const query = state.modelCatalogQuery.trim().toLowerCase();
+  let visibleCount = 0;
+  $$(".catalog-source").forEach(group => {
+    let groupCount = 0;
+    $$(".catalog-model", group).forEach(item => {
+      const visible = (state.modelCatalogFilter === "all" || item.dataset.modelStatus === state.modelCatalogFilter) && (!query || item.dataset.modelSearch.includes(query));
+      item.classList.toggle("hidden", !visible);
+      if (visible) groupCount++;
+    });
+    group.classList.toggle("hidden", groupCount === 0);
+    if (query && groupCount) group.classList.add("search-open");
+    else group.classList.remove("search-open");
+    group.querySelector("[data-catalog-toggle]")?.setAttribute("aria-expanded", String((query && groupCount > 0) || !state.modelCatalogCollapsed[group.querySelector("[data-catalog-toggle]")?.dataset.catalogToggle]));
+    visibleCount += groupCount;
+  });
+  const empty = $("[data-catalog-empty]");
+  if (empty) empty.classList.toggle("hidden", visibleCount > 0);
+}
+
 function renderDatasources() {
   const rows = dataSources.map((source, index) => `<tr>
     <td class="source-name-cell"><div class="entity"><span><strong>${escapeHtml(source.name)}</strong></span></div></td>
@@ -499,7 +559,7 @@ function renderModels() {
   const content = state.modelTab === "基础信息" ? modelBasics(model, data) : state.modelTab === "维度" ? modelDimensions(data) : state.modelTab === "指标" ? modelMetrics(data) : state.modelTab === "关联" ? modelJoins(model, data) : modelYaml(model, data);
   return pageHead("语义模型", "用表单维护常用配置，复杂能力保留 YAML。", modelHeaderActions()) +
     `<select class="search-input mobile-model-select" id="mobileModelSelect" aria-label="选择模型">${models.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === model.id ? "selected" : ""}>${escapeHtml(item.name)} · ${escapeHtml(item.id)}</option>`).join("")}</select>
-    <div class="model-workbench"><aside class="model-browser"><div class="model-browser-head"><strong>模型</strong><div class="model-browser-head-actions"><span class="muted">${models.length}</span><div class="model-more model-add"><button class="model-add-button" data-action="toggle-model-more" aria-expanded="false" aria-label="新建模型">＋</button><div class="model-more-menu hidden"><button class="btn" data-action="new-model">新建</button><button class="btn" data-action="auto-model">自动建模</button></div></div></div></div><div class="model-search">⌕<input id="modelSearch" placeholder="搜索模型" aria-label="搜索模型"></div><div class="model-list">${models.map(item => `<button class="model-item ${item.id === model.id ? "active" : ""}" data-model="${escapeHtml(item.id)}"><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.id)}</small></span>${modelStatusDot(item.status)}</button>`).join("")}</div></aside>
+    <div class="model-workbench"><aside class="model-browser model-catalog-browser">${renderModelCatalog(model)}</aside>
     <section class="model-detail"><div class="model-titlebar"><div class="model-titlebar-main"><div class="model-title"><div><div class="actions"><h2>${escapeHtml(model.name)}</h2></div><p>${escapeHtml(model.source)} · ${escapeHtml(model.updated)}</p></div></div><div class="status-strip ${state.modelState === "dirty" ? "warn" : ""} ${state.modelState === "saved" ? "draft" : ""} ${state.modelStatusHidden || state.modelState === "applied" ? "hidden" : ""}"><div class="model-status-copy"><div><span class="state-pill ${info.cls}" data-model-state-pill>${info.title}</span>${info.description ? `<span class="model-state-desc" data-model-state-desc>${info.description}</span>` : ""}</div>${state.modelTab === "YAML" ? '<span class="model-file-note">真实文件 · 自动校验与备份</span>' : ""}</div>${modelActionButtons()}</div></div><div class="actions">${modelVisibilityButton(data.form.public)}<button class="btn small" data-action="remodel-model">重建</button><button class="btn small" data-action="validate-model">校验</button><button class="btn danger small" data-action="delete-model">删除</button></div></div>
     <nav class="tabs">${tabs.map(tab => `<button class="${tab === state.modelTab ? "active" : ""}" data-model-tab="${tab}">${tab}${counts[tab] !== undefined ? ` ${counts[tab]}` : ""}</button>`).join("")}</nav><div class="model-panel">${content}</div></section></div>`;
 }
@@ -894,6 +954,19 @@ function bindBasePage() {
     if (event.key === "Enter" || event.key === " ") return handleAction("select-model-source", options[Math.max(activeIndex, 0)]);
   });
   $$('[data-model]').forEach(button => button.onclick = () => switchModel(button.dataset.model));
+  $$('[data-catalog-toggle]').forEach(button => button.onclick = () => {
+    const key = button.dataset.catalogToggle;
+    state.modelCatalogCollapsed[key] = !state.modelCatalogCollapsed[key];
+    const group = button.closest('.catalog-source');
+    const open = state.modelCatalogCollapsed[key] !== true;
+    group?.classList.toggle('open', open);
+    button.setAttribute('aria-expanded', String(open));
+  });
+  $$('[data-catalog-filter]').forEach(button => button.onclick = () => {
+    state.modelCatalogFilter = button.dataset.catalogFilter;
+    $$('[data-catalog-filter]').forEach(item => item.classList.toggle('active', item === button));
+    applyModelCatalogFilters();
+  });
   $$('[data-model-tab]').forEach(button => button.onclick = () => { state.modelTab = button.dataset.modelTab; render(); });
   $$('[data-log-view]').forEach(button => button.onclick = () => { state.monitorLogView = button.dataset.logView; render(); });
   $$('[data-model-field]').forEach(field => field.oninput = () => {
@@ -913,7 +986,10 @@ function bindBasePage() {
     if (strip) strip.classList.add("warn");
   });
   const modelSearch = $("#modelSearch");
-  if (modelSearch) modelSearch.oninput = event => $$('.model-item').forEach(item => item.hidden = !item.textContent.toLowerCase().includes(event.target.value.toLowerCase()));
+  if (modelSearch) {
+    modelSearch.oninput = event => { state.modelCatalogQuery = event.target.value; applyModelCatalogFilters(); };
+    applyModelCatalogFilters();
+  }
   const mobileSelect = $("#mobileModelSelect");
   if (mobileSelect) mobileSelect.onchange = event => switchModel(event.target.value);
   const glossarySearch = $("#glossSearch");
