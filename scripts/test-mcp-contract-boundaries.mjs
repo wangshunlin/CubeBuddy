@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { modernClientOptions, modernRequest, modernHeaders } from './mcp-protocol.mjs';
 
 import assert from 'node:assert/strict';
 
@@ -40,10 +41,11 @@ async function expect(name, action) {
 }
 
 async function connect() {
-  const client = new Client({ name: 'cubebuddy-contract-boundary-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-contract-boundary-test', version: '1.0.0' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(new URL(endpoint), {
     authProvider: { token: async () => token },
   }));
+  assert.equal(client.getNegotiatedProtocolVersion(), '2026-07-28');
   return client;
 }
 
@@ -62,8 +64,8 @@ function errorSource(result) {
 await expect('协议：缺少鉴权令牌返回 401', async () => {
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'negative-test', version: '1' } } }),
+    headers: modernHeaders('server/discover'),
+    body: JSON.stringify(modernRequest('server/discover')),
   });
   assert.equal(response.status, 401);
   return '401';
@@ -74,10 +76,10 @@ let instructions;
 let sampleMeasure;
 let sampleDimension;
 let sampleTimeDimension;
-await expect('协议：Streamable HTTP 初始化、工具目录和 instructions', async () => withClient(async (client) => {
+await expect('协议：新版 Streamable HTTP 发现、工具目录和 instructions', async () => withClient(async (client) => {
   const modelList = await client.listTools();
   assert.deepEqual(modelList.tools.map((tool) => tool.name).sort(), expectedTools);
-  assert.ok(client.getInstructions()?.trim(), 'initialize 响应缺少 instructions');
+  assert.ok(client.getInstructions()?.trim(), 'server/discover 响应缺少 instructions');
 
   const meta = await client.callTool({ name: 'cube_meta', arguments: {} });
   assert.equal(meta.isError, undefined);

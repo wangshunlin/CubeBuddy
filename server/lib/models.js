@@ -294,4 +294,4 @@ function trash(deployDir, name) {
   return { trashed: '.cube-trash/' + newName };
 }
 
-module.exports = { list, get, put, putGenerated, mergeGeneratedContent, assertDimensionStructureUnchanged, createTemplate, trash };
+module.exports = { memberList, list, get, put, putGenerated, mergeGeneratedContent, assertDimensionStructureUnchanged, createTemplate, trash };

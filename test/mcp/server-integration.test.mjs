@@ -1,3 +1,4 @@
+import { modernClientOptions, modernRequest, modernHeaders } from '../../scripts/mcp-protocol.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -102,7 +103,7 @@ test('real CubeBuddy server issues, verifies and revokes native MCP tokens', asy
   assert.equal(issued.record.token, undefined);
   assert.equal(issued.record.tokenHash, undefined);
 
-  const client = new Client({ name: 'cubebuddy-real-server-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-real-server-test', version: '1.0.0' }, modernClientOptions);
   const endpoint = new URL('/mcp/test-agent', fixture.endpoint);
   await client.connect(new StreamableHTTPClientTransport(endpoint, {
     authProvider: { token: async () => issued.token },
@@ -119,7 +120,7 @@ test('real CubeBuddy server issues, verifies and revokes native MCP tokens', asy
 
   await adminRequest(fixture.endpoint, `/api/jwt/tokens/${encodeURIComponent(issued.record.id)}`, { method: 'DELETE' });
 
-  const revokedClient = new Client({ name: 'cubebuddy-revoked-token-test', version: '1.0.0' });
+  const revokedClient = new Client({ name: 'cubebuddy-revoked-token-test', version: '1.0.0' }, modernClientOptions);
   await assert.rejects(
     revokedClient.connect(new StreamableHTTPClientTransport(endpoint, {
       authProvider: { token: async () => issued.token },
@@ -127,6 +128,15 @@ test('real CubeBuddy server issues, verifies and revokes native MCP tokens', asy
     /401|Unauthorized|invalid|revoked/i,
   );
   await revokedClient.close().catch(() => {});
+  for (const method of ['server/discover', 'tools/list', 'tools/call']) {
+    const params = method === 'tools/call' ? { name: 'cube_meta', arguments: {} } : {};
+    const response = await fetch(endpoint, {
+      method: 'POST', headers: modernHeaders(method, issued.token, params.name),
+      body: JSON.stringify(modernRequest(method, params)),
+    });
+    assert.equal(response.status, 401);
+  }
+
 });
 
 test('startup migrates legacy plaintext token records but rejects tokens without an explicit Server', async (t) => {
@@ -147,14 +157,12 @@ test('startup migrates legacy plaintext token records but rejects tokens without
   assert.equal(migrated[0].token, undefined);
   assert.match(migrated[0].tokenHash, /^[a-f0-9]{64}$/);
 
-  const client = new Client({ name: 'cubebuddy-legacy-token-test', version: '1.0.0' });
-  await assert.rejects(
-    client.connect(new StreamableHTTPClientTransport(new URL('/mcp/any-server', fixture.endpoint), {
-      authProvider: { token: async () => legacyToken },
-    })),
-    /404|MCP Server|JWT|Unauthorized/i,
-  );
-  await client.close().catch(() => {});
+  const response = await fetch(new URL('/mcp/any-server', fixture.endpoint), {
+    method: 'POST', headers: modernHeaders('server/discover', legacyToken),
+    body: JSON.stringify(modernRequest('server/discover')),
+  });
+  assert.equal(response.status, 404);
+
 });
 
 test('MCP Server keys are bound to their own endpoint', async (t) => {
@@ -180,17 +188,24 @@ test('MCP Server keys are bound to their own endpoint', async (t) => {
   assert.equal(issued.record.mcpServerId, 'sales-agent');
 
   const salesEndpoint = new URL('/mcp/sales-agent', fixture.endpoint);
-  const client = new Client({ name: 'mcp-server-scope-test', version: '1.0.0' });
+  const client = new Client({ name: 'mcp-server-scope-test', version: '1.0.0' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(salesEndpoint, { authProvider: { token: async () => issued.token } }));
   assert.equal((await client.listTools()).tools.length, 6);
   await client.close();
 
-  const wrongClient = new Client({ name: 'mcp-server-wrong-endpoint-test', version: '1.0.0' });
-  await assert.rejects(
-    wrongClient.connect(new StreamableHTTPClientTransport(fixture.endpoint, { authProvider: { token: async () => issued.token } })),
-    /404|serverId|Unauthorized|invalid|JWT/i,
-  );
-  await wrongClient.close().catch(() => {});
+  // A real second Server distinguishes credential isolation from a missing endpoint.
+  await adminRequest(fixture.endpoint, '/api/mcp-servers', {
+    method: 'POST', body: JSON.stringify({ id: 'finance-agent', modelIds: ['finance'] }),
+  });
+  for (const method of ['server/discover', 'tools/list', 'tools/call']) {
+    const params = method === 'tools/call' ? { name: 'cube_meta', arguments: {} } : {};
+    const response = await fetch(new URL('/mcp/finance-agent', fixture.endpoint), {
+      method: 'POST', headers: modernHeaders(method, issued.token, params.name),
+      body: JSON.stringify(modernRequest(method, params)),
+    });
+    assert.equal(response.status, 401);
+  }
+
 });
 
 test('MCP requires an explicit Server endpoint and rejects the legacy default alias', async (t) => {
@@ -208,7 +223,7 @@ test('MCP requires an explicit Server endpoint and rejects the legacy default al
   await adminRequest(fixture.endpoint, '/api/mcp-servers', { method: 'POST', body: JSON.stringify({ id: 'sales', modelIds: ['orders'] }) });
   const issued = await adminRequest(fixture.endpoint, '/api/mcp-servers/sales/tokens', { method: 'POST', body: '{}' });
   assert.equal(issued.record.mcpServerId, 'sales');
-  const client = new Client({ name: 'explicit-endpoint-test', version: '1' });
+  const client = new Client({ name: 'explicit-endpoint-test', version: '1' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(new URL('/mcp/sales', fixture.endpoint), { authProvider: { token: async () => issued.token } }));
   assert.equal((await client.listTools()).tools.length, 6);
   await client.close();
@@ -247,4 +262,30 @@ test('model deletion requires explicit MCP detach confirmation', async (t) => {
   assert.match(blocked.error, /解除绑定/);
   assert.equal((await adminRequest(fixture.endpoint, '/api/mcp-servers/orders-agent')).server.modelIds[0], 'orders');
   assert.match(await readFile(path.join(fixture.deployDir, 'schema', 'orders.yml'), 'utf8'), /orders/);
+});
+
+test('protocol diagnostics require admin, reflect configuration and never issue service keys', async (t) => {
+  const fixture = await startCubeBuddy(async deployDir => {
+    await mkdir(path.join(deployDir, 'schema'), { recursive: true });
+    await writeFile(path.join(deployDir, 'schema', 'orders.yml'), 'cubes:\n  - name: orders\n');
+  });
+  t.after(() => fixture.close());
+  await adminRequest(fixture.endpoint, '/api/mcp-servers', {
+    method: 'POST', body: JSON.stringify({ id: 'diagnostic-agent', modelIds: ['orders'], instructions: '专属使用说明' }),
+  });
+  const pathname = '/api/mcp-servers/diagnostic-agent/diagnostics';
+  assert.equal((await fetch(new URL(pathname, fixture.endpoint))).status, 401);
+  const { diagnostics } = await adminRequest(fixture.endpoint, pathname);
+  assert.equal(diagnostics.scope, 'local');
+  assert.equal(diagnostics.discovery.instructions, '专属使用说明');
+  assert.deepEqual(diagnostics.discovery.supportedVersions, ['2026-07-28']);
+  assert.equal(diagnostics.tools.length, 6);
+  assert.equal(diagnostics.cache.cacheScope, 'private');
+  assert.deepEqual((await adminRequest(fixture.endpoint, '/api/mcp-servers/diagnostic-agent/tokens')).tokens, []);
+  await adminRequest(fixture.endpoint, '/api/mcp-servers/diagnostic-agent', {
+    method: 'PUT', body: JSON.stringify({ instructions: '已更新说明' }),
+  });
+  assert.equal((await adminRequest(fixture.endpoint, pathname)).diagnostics.discovery.instructions, '已更新说明');
+  await adminRequest(fixture.endpoint, '/api/mcp-servers/diagnostic-agent', { method: 'PUT', body: JSON.stringify({ enabled: false }) });
+  assert.equal((await fetch(new URL(pathname, fixture.endpoint), { headers: { authorization: `Bearer ${ADMIN_TOKEN}` } })).status, 409);
 });

@@ -9,6 +9,27 @@ CubeBuddy 将数据源配置、Cube YAML 语义建模、业务术语、原生 MC
 > **状态：社区预览版**  
 > 本项目不是 Cube Dev 官方产品，也不代表 Cube Dev。Cube Core 的能力、版本兼容性和许可证以 [Cube 官方文档](https://docs.cube.dev/) 为准。
 
+## MCP 协议与接入诊断
+
+原生 MCP 支持 `2026-07-28`，并保留旧版 `initialize` 握手兼容。新版请求无需初始化或 Session ID；`server/discover` 返回协议版本、服务身份、能力和可选的 `instructions`。Instructions 可在控制台编辑，模型权限由 Server 绑定和 JWT 校验执行。
+
+官方 TypeScript SDK 2.x 客户端需要显式启用版本协商：
+
+```js
+const client = new Client({ name: 'my-agent', version: '1.0' }, {
+  versionNegotiation: { mode: 'auto' },
+});
+await client.connect(new StreamableHTTPClientTransport(new URL(endpoint), {
+  authProvider: { token: async () => serviceKey },
+}));
+```
+
+`auto` 探测新版并在旧版服务器上回退；要求新版时使用 `mode: { pin: '2026-07-28' }`。直接发送 HTTP 请求时需提供协议 `_meta`、`MCP-Protocol-Version`、`Mcp-Method`，工具调用还需 `Mcp-Name`；响应可以是 JSON 或请求内 SSE。
+
+MCP 管理概览默认展示协议版本和旧版兼容信息；展开“接入排查”后的“本地协议检测”通过管理员接口 `GET /api/mcp-servers/:serverId/diagnostics` 读取实际本地协议处理器，展示版本、身份、能力、六个工具和缓存策略，不签发服务密钥。该检测不覆盖公网代理或 JWT 鉴权；部署后使用 `MCP_ENDPOINT` 和 `MCP_TOKEN` 运行 `npm run test:mcp:e2e` 验证真实入口。检测后修改配置会清除页面检测结果，需重新检测。
+
+目前仅声明 Tools 能力，模型详情继续通过 `cube_meta_detail` 提供；Resources、Prompts 和订阅不作为本次协议升级的新增功能。目录缓存当前为 `ttlMs: 0`、`cacheScope: "private"`。
+
 ## 特色与优势
 
 与直接让 Agent 连接数据库、只做协议转换的通用网关或偏重可视化消费的管理工具相比，CubeBuddy 更关注“从业务定义到安全查询”的完整链路：

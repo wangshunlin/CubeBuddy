@@ -23,7 +23,6 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
-    "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "26.4.0",
     "typescript": "7.0.2"
   },
@@ -34,6 +33,7 @@
     "fflate": "^0.8.3",
     "mysql2": "3.24.4",
     "yaml": "2.9.0",
-    "zod": "4.2.0"
+    "zod": "4.2.0",
+    "@modelcontextprotocol/client": "2.0.0"
   }
 }

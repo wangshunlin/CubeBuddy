@@ -1,3 +1,4 @@
+import { modernClientOptions, modernRequest, modernHeaders } from '../../scripts/mcp-protocol.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
@@ -5,6 +6,7 @@ import test from 'node:test';
 
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import YAML from 'yaml';
+import mcpServers from '../../server/lib/mcp-servers.js';
 
 import { createNativeMcp } from '../../dist/mcp/index.js';
 
@@ -51,8 +53,7 @@ function fakeService() {
   };
 }
 
-async function startFixture({ instructions } = {}) {
-  const service = fakeService();
+async function startFixture({ instructions, service = fakeService() } = {}) {
   const audit = [];
   const nativeMcp = createNativeMcp({
     service,
@@ -99,7 +100,7 @@ test('official MCP client discovers stable CubeBuddy tool schemas', async (t) =>
   const fixture = await startFixture({ instructions: '仅用于目录查询；禁止猜测物理表。' });
   t.after(() => fixture.close());
 
-  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' }, modernClientOptions);
   const transport = new StreamableHTTPClientTransport(fixture.endpoint, {
     authProvider: { token: async () => GOOD_TOKEN },
   });
@@ -130,7 +131,7 @@ test('official MCP client discovers stable CubeBuddy tool schemas', async (t) =>
 test('OpenAPI operations and MCP tools retain their documented mapping', async (t) => {
   const fixture = await startFixture();
   t.after(() => fixture.close());
-  const client = new Client({ name: 'cubebuddy-contract-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-contract-test', version: '1.0.0' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
     authProvider: { token: async () => GOOD_TOKEN },
   }));
@@ -163,7 +164,7 @@ test('cube_load accepts an object query and returns official results wrapper', a
   const fixture = await startFixture();
   t.after(() => fixture.close());
 
-  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
     authProvider: { token: async () => GOOD_TOKEN },
   }));
@@ -186,7 +187,7 @@ test('cube_load validates Cube order formats before calling Cube', async (t) => 
   const fixture = await startFixture();
   t.after(() => fixture.close());
 
-  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
     authProvider: { token: async () => GOOD_TOKEN },
   }));
@@ -221,7 +222,7 @@ test('cube_load rejects malformed documented query structures before calling Cub
   const fixture = await startFixture();
   t.after(() => fixture.close());
 
-  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
     authProvider: { token: async () => GOOD_TOKEN },
   }));
@@ -269,7 +270,7 @@ test('invalid input is rejected and Cube errors remain valid MCP error results',
   const fixture = await startFixture();
   t.after(() => fixture.close());
 
-  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' });
+  const client = new Client({ name: 'cubebuddy-test', version: '1.0.0' }, modernClientOptions);
   await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, {
     authProvider: { token: async () => GOOD_TOKEN },
   }));
@@ -328,4 +329,120 @@ test('native MCP rejects missing tokens and insufficient scopes before protocol 
   });
   assert.equal(insufficient.status, 403);
   assert.match(insufficient.headers.get('www-authenticate') || '', /insufficient_scope/i);
+});
+
+async function rawModern(fixture, method, { params, headers, token = GOOD_TOKEN, mutate } = {}) {
+  const request = modernRequest(method, params);
+  mutate?.(request);
+  const response = await fetch(fixture.endpoint, {
+    method: 'POST', headers: { ...modernHeaders(method, token, params?.name), ...headers },
+    body: JSON.stringify(request),
+  });
+  return { response, body: await response.json() };
+}
+
+test('modern raw requests discover and call tools without initialization or session state', async (t) => {
+  const fixture = await startFixture({ instructions: '本 Server 的使用说明' });
+  t.after(() => fixture.close());
+  // Listing first proves discovery is optional and there is no handshake dependency.
+  const list = await rawModern(fixture, 'tools/list');
+  const discover = await rawModern(fixture, 'server/discover');
+  for (const { response, body } of [list, discover]) {
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('mcp-session-id'), null);
+    assert.equal(body.result.resultType, 'complete');
+    assert.equal(body.result.cacheScope, 'private');
+    assert.ok(Number.isInteger(body.result.ttlMs) && body.result.ttlMs >= 0);
+    assert.equal(body.result._meta['io.modelcontextprotocol/serverInfo'].name, 'cubebuddy');
+  }
+  assert.deepEqual(discover.body.result.supportedVersions, ['2026-07-28']);
+  assert.equal(discover.body.result.instructions, '本 Server 的使用说明');
+  assert.ok(discover.body.result.capabilities.tools);
+  assert.equal(discover.body.result.capabilities.resources, undefined);
+  assert.equal(discover.body.result.capabilities.prompts, undefined);
+  assert.equal(list.body.result.tools.length, 6);
+  const repeat = await rawModern(fixture, 'tools/list');
+  assert.deepEqual(repeat.body.result.tools, list.body.result.tools);
+  const call = await rawModern(fixture, 'tools/call', { params: { name: 'cube_load', arguments: { query: { measures: ['EmergencyEvents.count'] } } } });
+  assert.equal(call.response.status, 200);
+  assert.equal(call.body.result.resultType, 'complete');
+  assert.equal(call.body.result.structuredContent.results.length, 1);
+});
+
+test('modern protocol rejects invalid metadata and mismatched HTTP headers', async (t) => {
+  const fixture = await startFixture();
+  t.after(() => fixture.close());
+  for (const mutate of [
+    request => { delete request.params._meta; },
+    request => { delete request.params._meta['io.modelcontextprotocol/clientCapabilities']; },
+  ]) {
+    const { response, body } = await rawModern(fixture, 'tools/list', { mutate });
+    assert.equal(response.status, 400);
+    assert.ok(body.error);
+  }
+  for (const headers of [
+    { 'Mcp-Method': 'server/discover' },
+    { 'MCP-Protocol-Version': '2025-11-25' },
+  ]) {
+    const { response, body } = await rawModern(fixture, 'tools/list', { headers });
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, -32020);
+  }
+  const nameMismatch = await rawModern(fixture, 'tools/call', {
+    params: { name: 'cube_load', arguments: { query: {} } },
+    headers: { 'Mcp-Name': 'cube_meta' },
+  });
+  assert.equal(nameMismatch.response.status, 400);
+  assert.equal(nameMismatch.body.error.code, -32020);
+  const unsupported = await rawModern(fixture, 'tools/list', {
+    headers: { 'MCP-Protocol-Version': '2099-01-01' },
+    mutate: request => { request.params._meta['io.modelcontextprotocol/protocolVersion'] = '2099-01-01'; },
+  });
+  assert.equal(unsupported.body.error.code, -32022);
+});
+
+test('modern discovery and direct calls require authorization and sufficient scope', async (t) => {
+  const fixture = await startFixture();
+  t.after(() => fixture.close());
+  for (const method of ['server/discover', 'tools/list', 'tools/call']) {
+    const params = method === 'tools/call' ? { name: 'cube_load', arguments: { query: {} } } : {};
+    for (const [token, status] of [['', 401], ['invalid', 401], ['wrong-scope', 403]]) {
+      const { response } = await rawModern(fixture, method, { token, params });
+      assert.equal(response.status, status);
+    }
+  }
+  assert.equal(fixture.service.calls.length, 0);
+});
+
+test('legacy client can still initialize and list tools', async (t) => {
+  const fixture = await startFixture();
+  t.after(() => fixture.close());
+  const client = new Client({ name: 'legacy-test', version: '1' }, { versionNegotiation: { mode: 'legacy' } });
+  t.after(() => client.close());
+  await client.connect(new StreamableHTTPClientTransport(fixture.endpoint, { authProvider: { token: async () => GOOD_TOKEN } }));
+  assert.equal((await client.listTools()).tools.length, 6);
+  assert.ok(client.getInstructions());
+});
+
+test('modern direct tool calls enforce model bindings before reaching Cube', async (t) => {
+  const source = fakeService();
+  source.meta = async () => ({ cubes: [{ name: 'orders' }, { name: 'finance' }] });
+  const fixture = await startFixture({ service: mcpServers.createScopedCubeToolService(source, {
+    id: 'sales', modelIds: ['orders'], enabled: true,
+  }) });
+  t.after(() => fixture.close());
+  const meta = await rawModern(fixture, 'tools/call', { params: { name: 'cube_meta', arguments: {} } });
+  assert.deepEqual(meta.body.result.structuredContent.cubes, [{ name: 'orders' }]);
+  for (const [name, args] of [
+    ['cube_meta_detail', { name: 'finance' }],
+    ['cube_load', { query: { measures: ['finance.count'] } }],
+    ['cube_dry_run', { query: { measures: ['finance.count'] } }],
+    ['cube_search', { dimension: 'finance.region', query: '示例' }],
+  ]) {
+    const result = await rawModern(fixture, 'tools/call', { params: { name, arguments: args } });
+    assert.equal(result.body.result.resultType, 'complete');
+    assert.equal(result.body.result.isError, true);
+    assert.equal(JSON.parse(result.body.result.content[0].text).code, 'model_not_allowed');
+  }
+  assert.equal(source.calls.length, 0);
 });

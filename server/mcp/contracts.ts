@@ -99,8 +99,8 @@ export const cubeLoadOutputSchema = z.object({
 
 export const cubeMetaOutputSchema = z.object({
   cubes: z.array(z.record(z.string(), z.unknown())),
-  summary: z.boolean(),
-  generatedAt: z.number(),
+  summary: z.boolean().optional(),
+  generatedAt: z.number().optional(),
 });
 
 const glossaryHitSchema = z.object({

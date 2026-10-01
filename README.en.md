@@ -9,6 +9,16 @@ CubeBuddy brings data source configuration, Cube YAML modeling, business termino
 > **Status: Community Preview**  
 > This is not an official Cube Dev product and does not represent Cube Dev. Refer to the [official Cube documentation](https://docs.cube.dev/) for Cube Core capabilities, compatibility, and licensing.
 
+## MCP protocol and diagnostics
+
+Native MCP supports `2026-07-28` and retains the legacy `initialize` handshake. Modern requests need no initialization or Session ID. `server/discover` advertises versions, identity, capabilities and optional instructions. Instructions remain editable; model bindings and JWT validation enforce access.
+
+For the TypeScript SDK 2.x client, explicitly set `versionNegotiation: { mode: 'auto' }` in the `Client` constructor. This probes modern servers and falls back for legacy servers. Use `mode: { pin: '2026-07-28' }` to require the modern revision. Raw HTTP requests need protocol `_meta`, `MCP-Protocol-Version`, `Mcp-Method`, and `Mcp-Name` for tool calls. Responses may use JSON or request-scoped SSE.
+
+The MCP overview shows the protocol version and legacy compatibility. Its collapsed troubleshooting section offers a local protocol check that uses the admin-only `GET /api/mcp-servers/:serverId/diagnostics` route to inspect the actual local handler without issuing a service key. It displays versions, identity, capabilities, tool names and cache policy. Public proxy connectivity and JWT authentication require `npm run test:mcp:e2e` with `MCP_ENDPOINT` and `MCP_TOKEN`. Reloading configuration clears displayed diagnostic results.
+
+Only Tools are advertised. Model details remain available through `cube_meta_detail`; this upgrade does not add Resources, Prompts or subscriptions. Current catalog hints are `ttlMs: 0` and `cacheScope: "private"`.
+
 ## Highlights and advantages
 
 Compared with direct database access for agents, generic protocol-conversion gateways, or administration products centered on visual consumption, CubeBuddy focuses on the complete path from business definitions to controlled queries:

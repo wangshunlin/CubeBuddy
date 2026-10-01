@@ -1,3 +1,4 @@
+import { modernClientOptions, modernRequest, modernHeaders } from './mcp-protocol.mjs';
 import assert from 'node:assert/strict';
 
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -49,27 +50,13 @@ async function check(name, callback) {
 
 function rawHeaders(accessToken = token, extra = {}) {
   return {
-    accept: 'application/json, text/event-stream',
-    'content-type': 'application/json',
-    ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+    ...modernHeaders('server/discover', accessToken),
     ...extra,
   };
 }
 
-function initializeRequest(id = 1) {
-  return {
-    jsonrpc: '2.0',
-    id,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2025-06-18',
-      capabilities: {},
-      clientInfo: { name: 'cubebuddy-e2e', version: '1.0.0' },
-    },
-  };
-}
-
 function assertSuccessfulToolResult(result, name) {
+  assert.equal(result.resultType, 'complete', `${name} 缺少新版 resultType`);
   assert.notEqual(result.isError, true, `${name} 返回 MCP 错误：${result.content?.[0]?.text || '未知错误'}`);
   assert.ok(result.structuredContent && typeof result.structuredContent === 'object', `${name} 缺少 structuredContent`);
   const text = result.content?.find((item) => item.type === 'text')?.text;
@@ -86,7 +73,7 @@ await check('鉴权：缺少 Bearer JWT 返回 401', async () => {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: rawHeaders(''),
-    body: JSON.stringify(initializeRequest()),
+    body: JSON.stringify(modernRequest('server/discover')),
   });
   assert.equal(response.status, 401);
   assert.match(response.headers.get('www-authenticate') || '', /Bearer/i);
@@ -96,7 +83,7 @@ await check('鉴权：无效 JWT 返回 401', async () => {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: rawHeaders('invalid.cubebuddy.token'),
-    body: JSON.stringify(initializeRequest()),
+    body: JSON.stringify(modernRequest('server/discover')),
   });
   assert.equal(response.status, 401);
 });
@@ -105,7 +92,7 @@ await check('安全：不受信任 Origin 被拒绝', async () => {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: rawHeaders(token, { origin: 'https://untrusted.invalid' }),
-    body: JSON.stringify(initializeRequest()),
+    body: JSON.stringify(modernRequest('server/discover')),
   });
   assert.equal(response.status, 403);
 });
@@ -119,14 +106,32 @@ await check('协议：畸形 JSON 返回 400', async () => {
   assert.equal(response.status, 400);
 });
 
-await check('协议：官方 SDK 可初始化 Streamable HTTP 会话', async () => {
-  client = new Client({ name: 'cubebuddy-e2e', version: '1.0.0' });
+await check('协议：官方 SDK 固定新版 Streamable HTTP 协议', async () => {
+  client = new Client({ name: 'cubebuddy-e2e', version: '1.0.0' }, modernClientOptions);
   const transport = new StreamableHTTPClientTransport(endpoint, {
     authProvider: { token: async () => token },
   });
   await client.connect(transport);
+  assert.equal(client.getNegotiatedProtocolVersion(), '2026-07-28');
   assert.equal(client.getServerVersion()?.name, 'cubebuddy');
   return `${client.getServerVersion()?.name}@${client.getServerVersion()?.version}`;
+});
+
+await check('协议：新版发现与无初始化工具目录', async () => {
+  for (const method of ['server/discover', 'tools/list']) {
+    const response = await fetch(endpoint, { method: 'POST', headers: modernHeaders(method, token), body: JSON.stringify(modernRequest(method)) });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('mcp-session-id'), null);
+    const { result } = await response.json();
+    assert.equal(result.resultType, 'complete');
+    assert.equal(result.cacheScope, 'private');
+    assert.ok(Number.isInteger(result.ttlMs) && result.ttlMs >= 0);
+    if (method === 'server/discover') {
+      assert.ok(result.supportedVersions.includes('2026-07-28'));
+      assert.ok(result.instructions?.trim());
+      assert.ok(result.capabilities.tools);
+    } else assert.deepEqual(result.tools.map(tool => tool.name).sort(), expectedTools);
+  }
 });
 
 let tools = [];
@@ -154,13 +159,10 @@ await check('工具目录：六个只读工具及 Schema 稳定', async () => {
 let cubes = [];
 await check('cube_meta：发现非空语义模型摘要', async () => {
   const result = assertSuccessfulToolResult(await client.callTool({ name: 'cube_meta', arguments: {} }), 'cube_meta');
-  assert.equal(result.summary, true);
-  assert.ok(Number.isFinite(result.generatedAt));
   assert.ok(Array.isArray(result.cubes) && result.cubes.length > 0, '未发现任何 Cube');
   cubes = result.cubes;
   for (const cube of cubes) {
-    assert.ok(cube.name && cube.title, 'Cube 摘要缺少 name/title');
-    assert.ok(Number.isInteger(cube.measureCount) && Number.isInteger(cube.dimensionCount));
+    assert.ok(cube.name, 'Cube 摘要缺少 name');
   }
   return `${cubes.length} 个 Cube`;
 });
@@ -169,7 +171,7 @@ let metadataCube;
 let loadQuery;
 let searchDimension;
 await check('cube_meta_detail：当前 Server 已绑定模型的成员完整', async () => {
-  const summary = cubes.find((cube) => cube.measureCount > 0 || cube.dimensionCount > 0);
+  const summary = cubes[0];
   assert.ok(summary, '没有包含可查询成员的 Cube');
   const result = assertSuccessfulToolResult(await client.callTool({
     name: 'cube_meta_detail',

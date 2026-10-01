@@ -1,3 +1,7 @@
+(async function initializeConsole() {
+const assetBase = new URL(".", document.currentScript.src);
+window.CubeYaml = await import(new URL("vendor/yaml/index.js", assetBase).href);
+await import(new URL("measures.js", assetBase).href);
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
@@ -275,6 +279,7 @@ function openModal({ title, sub = "", icon = "◇", body = "", confirm = "确认
   modal.classList.toggle("wide", wide);
   modal.classList.toggle("auto-model-modal", modalClass === "auto-model-modal");
   modal.classList.toggle("source-modal", modalClass === "source-modal");
+  modal.classList.toggle("measure-modal", modalClass === "measure-modal");
   $("#modalIcon").textContent = icon;
   $("#modalTitle").textContent = title;
   $("#modalSub").textContent = sub;
@@ -372,6 +377,7 @@ function updateVisibilityToggle(button, isPublic, busy = false) {
   button.classList.toggle("on", isPublic);
   button.setAttribute("aria-pressed", String(isPublic));
   button.setAttribute("aria-label", isPublic ? "关闭公开" : "开启公开");
+  if (button.dataset.kind === "metrics") button.setAttribute("title", isPublic ? "关闭后不能通过 API 直接查询此指标" : "开启后可发现并直接查询此指标");
   button.disabled = busy;
 }
 
@@ -537,8 +543,8 @@ function modelDimensions(data) {
 }
 
 function modelMetrics(data) {
-  const rows = data.metrics.map((item, index) => `<tr><td><div class="entity"><span class="metric-symbol">#</span><span><strong>${escapeHtml(item.title)}</strong><small class="mono">${escapeHtml(item.name)}</small></span></div></td><td><span class="badge purple">${escapeHtml(item.type)}</span></td><td class="mono">${escapeHtml(item.sql)}</td><td>${escapeHtml(item.format)}</td><td>${escapeHtml(item.description)}</td><td><div class="member-actions"><label class="member-exposure"><button class="toggle member-toggle ${item.public !== false ? "on" : ""}" aria-label="${item.public !== false ? "关闭" : "开启"}${escapeHtml(item.title)}对外暴露" aria-pressed="${item.public !== false}" data-action="toggle-member-public" data-kind="metrics" data-index="${index}" title="${item.public !== false ? "关闭对外暴露" : "开启对外暴露"}"><i></i></button></label><span class="member-actions-divider"></span><button class="link" data-action="edit-metric" data-index="${index}">编辑</button><button class="link bad" data-action="delete-member" data-kind="metrics" data-index="${index}">删除</button></div></td></tr>`).join("");
-  return `<div class="member-table-scroll"><table class="table"><thead><tr><th>指标</th><th>类型</th><th>字段 / SQL</th><th>格式</th><th>说明</th><th class="member-actions-col">可见性</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="empty"><b>暂无指标</b>点击“新建指标”开始配置</div></td></tr>'}</tbody></table></div>${modelFooter()}`;
+  const rows = data.metrics.map((item, index) => `<tr><td><div class="entity"><span class="metric-symbol">#</span><span><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong><small class="mono" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</small></span></div></td><td><span class="badge purple">${escapeHtml(item.type)}</span></td><td><span class="mono measure-list-text measure-list-sql" title="${escapeHtml(item.sql)}">${escapeHtml(item.sql)}</span></td><td>${escapeHtml(CubeMeasures.formats[item.format] || item.format || "默认")}</td><td><span class="measure-list-text measure-list-description" title="${escapeHtml(item.description)}">${escapeHtml(item.description)}</span>${item.filters?.length ? `<small class="measure-condition-count">${item.filters.length} 条固定条件</small>` : ""}</td><td><div class="member-actions"><label class="member-exposure"><button class="toggle member-toggle ${item.public !== false ? "on" : ""}" aria-label="${item.public !== false ? "关闭" : "开启"}${escapeHtml(item.title)}对外暴露" aria-pressed="${item.public !== false}" data-action="toggle-member-public" data-kind="metrics" data-index="${index}" title="${item.public !== false ? "关闭后不能通过 API 直接查询此指标" : "开启后可发现并直接查询此指标"}"><i></i></button></label><span class="member-actions-divider"></span><button class="link" data-action="edit-metric" data-index="${index}">编辑</button><button class="link bad" data-action="delete-member" data-kind="metrics" data-index="${index}">删除</button></div></td></tr>`).join("");
+  return `<div class="toolbar"><strong>指标 <span class="muted">${data.metrics.length}</span></strong><button class="btn primary small" data-action="new-metric">＋ 新建指标</button></div><div class="member-table-scroll"><table class="table measures-table"><colgroup><col class="measure-col-name"><col class="measure-col-type"><col class="measure-col-sql"><col class="measure-col-format"><col class="measure-col-description"><col class="measure-col-actions"></colgroup><thead><tr><th>指标</th><th>类型</th><th>字段 / SQL</th><th>格式</th><th>说明</th><th class="member-actions-col">可见性</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="empty"><b>暂无指标</b>点击“新建指标”开始配置</div></td></tr>'}</tbody></table></div>${modelFooter()}`;
 }
 
 function modelJoins(model, data) {
@@ -682,6 +688,114 @@ function newModelModal() {
   } });
 }
 
+function measureModal(index = null) {
+  const data = currentModelData();
+  const existing = index === null ? null : data.metrics[index];
+  let draft = existing ? CubeMeasures.fromUi(existing) : { name: '', title: '', type: 'sum', sql: '', description: '' };
+  delete draft._originalName;
+  const originalName = existing?.name;
+  let mode = 'form';
+  let sqlSelection = null;
+  let settingsOpen = false;
+  let initialType = draft.type;
+  const error = message => { $('#measureError').textContent = message; $('#measureError').hidden = !message; };
+  function readForm() {
+    const next = { ...draft, name: $('#measureName').value.trim(), type: $('#measureType').value };
+    for (const key of ['title', 'description', 'format', 'currency', 'sql']) {
+      const value = $(`#measure${key[0].toUpperCase() + key.slice(1)}`).value.trim();
+      if (value) next[key] = value; else delete next[key];
+    }
+    const filters = $$('.measure-filter-sql').map((input, i) => ({ ...(draft.filters?.[i] || {}), sql: input.value.trim() }));
+    if (filters.length) next.filters = filters; else delete next.filters;
+    return next;
+  }
+  function renderEditor() {
+    $('#measureFormTab').classList.toggle('active', mode === 'form');
+    $('#measureYamlTab').classList.toggle('active', mode === 'yaml');
+    if (mode === 'yaml') {
+      $('#measureEditorBody').innerHTML = `<label class="field">当前指标 YAML<textarea id="measureYaml" class="mono measure-yaml" spellcheck="false">${escapeHtml(CubeMeasures.stringify(draft))}</textarea><small>编辑完整 Measure 定义，高级属性会原样保留。保存只检查结构；发布前仍需编译和查询验证。</small></label>`;
+      return;
+    }
+    const types = { ...CubeMeasures.types };
+    if (draft.type && !types[draft.type]) types[draft.type] = '高级类型（保留）';
+    const formats = { ...CubeMeasures.formats };
+    if (draft.format && !formats[draft.format]) formats[draft.format] = draft.format;
+    $('#measureEditorBody').innerHTML = `
+      <section class="measure-section"><h3>基本信息</h3><div class="grid cols-2">
+        <label class="field">名称 <span class="required">*</span><input id="measureName" value="${escapeHtml(draft.name)}" placeholder="例如 paid_revenue"><small id="measureApiReference">API 引用：${escapeHtml(data.form.id)}.${escapeHtml(draft.name || "<名称>")}</small></label>
+        <label class="field">业务标题<input id="measureTitle" value="${escapeHtml(draft.title || '')}" placeholder="例如 已支付金额"></label>
+        <label class="field measure-wide">业务描述<textarea id="measureDescription" placeholder="说明统计范围、退款处理和业务含义">${escapeHtml(draft.description || '')}</textarea></label>
+      </div></section>
+      <section class="measure-section"><h3>计算定义</h3><label class="field">类型 <span class="required">*</span><select id="measureType">${Object.entries(types).map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === draft.type ? 'selected' : ''}>${label} · ${escapeHtml(value)}</option>`).join('')}</select></label>
+      <label class="field measure-expression"><span id="measureExpressionLabel">SQL 表达式</span><textarea id="measureSql" class="mono" spellcheck="false">${escapeHtml(draft.sql || '')}</textarea><small id="measureTypeHint"></small></label>
+      <div class="measure-insert"><span id="measureReferenceLabel">插入字段</span><select id="measureReference" aria-label="插入字段或指标"></select></div><p id="measureTypeChange" class="measure-help" hidden></p><p id="measureInsertHint" class="measure-help" role="status"></p>
+      ${Object.keys(draft).some(k => ['multi_stage', 'rolling_window', 'grain', 'filter', 'time_shift', 'case', 'mask', 'drill_members'].includes(k)) ? `<div class="measure-advanced-note">包含高级配置：${escapeHtml(Object.keys(draft).filter(k => ['multi_stage', 'rolling_window', 'grain', 'filter', 'time_shift', 'case', 'mask', 'drill_members'].includes(k)).join('、'))}。表单编辑会保留配置，完整定义请查看 YAML。</div>` : ''}
+      </section>
+      <section class="measure-section"><div class="measure-section-head"><h3>固定条件 <span>${draft.filters?.length || 0}</span></h3><button type="button" class="btn small" id="measureAddFilter">＋ 添加条件</button></div><p class="measure-help">只影响此指标的计算，并与本次查询筛选共同生效。</p>
+      <div id="measureFilters">${(draft.filters || []).map((f, i) => `<div class="measure-filter"><textarea class="mono measure-filter-sql" aria-label="固定条件 ${i + 1}" placeholder="{CUBE}.status = 'paid'">${escapeHtml(f.sql)}</textarea><button class="btn small" type="button" data-remove-filter="${i}" aria-label="删除条件 ${i + 1}">删除</button></div>`).join('') || '<div class="measure-empty">未设置固定条件，使用查询范围内的数据。</div>'}</div></section>
+      <details class="measure-section measure-settings" id="measureSettings" ${settingsOpen ? 'open' : ''}><summary>展示设置 <span>可选</span></summary><div class="grid cols-2"><label class="field">展示格式<select id="measureFormat">${Object.entries(formats).map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === (draft.format || '') ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label><label class="field" id="measureCurrencyField">币种<input id="measureCurrency" value="${escapeHtml(draft.currency || '')}" placeholder="例如 CNY（可选）"></label></div><p class="measure-help">供消费端展示使用，不改变计算公式。隐藏设置不会删除已有币种配置。</p></details>`;
+    $('#measureSettings').ontoggle = () => { settingsOpen = $('#measureSettings').open; };
+    const currencyVisibility = () => { $('#measureCurrencyField').hidden = !/^currency(?:_[0-6])?$/.test($('#measureFormat').value); };
+    $('#measureFormat').onchange = currencyVisibility; currencyVisibility();
+    const hint = () => {
+      const type = $('#measureType').value;
+      const config = CubeMeasures.expressionConfig(type);
+      $('#measureExpressionLabel').textContent = config.label;
+      $('#measureTypeHint').textContent = config.hint;
+      $('#measureSql').placeholder = config.placeholder;
+      $('#measureReferenceLabel').textContent = type === 'number' ? '插入指标' : '插入字段';
+      const dimensions = `<optgroup label="字段 / 维度">${data.dimensions.map(m => `<option value="{CUBE}.${escapeHtml(m.name)}">${escapeHtml(m.title)}（${escapeHtml(m.name)} · ${escapeHtml(m.type)}）</option>`).join('')}</optgroup>`;
+      const metrics = `<optgroup label="已聚合指标">${data.metrics.filter(m => m.name !== originalName).map(m => `<option value="{${escapeHtml(m.name)}}">${escapeHtml(m.title)}（${escapeHtml(m.name)} · ${escapeHtml(m.type)}）</option>`).join('')}</optgroup>`;
+      $('#measureReference').innerHTML = `<option value="">${type === 'number' ? '选择指标…' : '选择字段…'}</option>` + (type === 'number' ? metrics + dimensions : dimensions + metrics);
+      $('#measureTypeChange').hidden = type === initialType || !$('#measureSql').value.trim();
+      $('#measureTypeChange').textContent = '类型已变更，表达式已保留。请检查它是否适用于新类型，并在发布前进行 Cube 编译验证。';
+    };
+    $('#measureType').onchange = hint; hint();
+    $('#measureName').oninput = () => { $('#measureApiReference').textContent = `API 引用：${data.form.id}.${$('#measureName').value || '<名称>'}`; };
+    const captureSelection = () => { const input = $('#measureSql'); sqlSelection = { start: input.selectionStart, end: input.selectionEnd }; };
+    for (const event of ['keyup', 'mouseup', 'select', 'input', 'blur']) $('#measureSql').addEventListener(event, captureSelection);
+    sqlSelection = { start: $('#measureSql').value.length, end: $('#measureSql').value.length };
+    $('#measureReference').onchange = event => {
+      if (!event.target.value) return;
+      const input = $('#measureSql');
+      const inserted = CubeMeasures.insertReference(input.value, sqlSelection, event.target.value);
+      input.value = inserted.value; input.focus(); input.setSelectionRange(inserted.start, inserted.end);
+      sqlSelection = { start: inserted.start, end: inserted.end };
+      $('#measureInsertHint').textContent = inserted.adjacent ? '引用已插入；相邻表达式之间需要有效运算符，请检查 SQL。' : '';
+      event.target.value = '';
+      $('#measureCheckResult').textContent = '已修改，需重新检查';
+    };
+    $('#measureAddFilter').onclick = () => { draft = readForm(); draft.filters = [...(draft.filters || []), { sql: '' }]; renderEditor(); };
+    $$('[data-remove-filter]').forEach(button => button.onclick = () => { draft = readForm(); draft.filters.splice(Number(button.dataset.removeFilter), 1); renderEditor(); });
+  }
+  function readDraft() { return mode === 'form' ? readForm() : CubeMeasures.parse($('#measureYaml').value).toJS(); }
+  openModal({ title: existing ? '编辑指标' : '新建指标', sub: `${data.form.title || data.form.id} · Cube Measure`, icon: '#', wide: true, modalClass: 'measure-modal', confirm: '保存草稿',
+    body: '<div class="measure-mode-tabs"><button id="measureFormTab" type="button">表单编辑</button><button id="measureYamlTab" type="button">YAML 编辑</button><span>同一份指标定义</span></div><div id="measureError" class="measure-error" role="alert" hidden></div><div id="measureEditorBody"></div><div class="measure-validation"><button type="button" class="btn small" id="measureCheck">检查定义</button><span id="measureCheckResult" role="status">未检查</span><p>检查定义仅检查结构、命名和静态引用；尚未执行 Cube 编译或数据库查询。</p></div>',
+    afterOpen: () => {
+      renderEditor();
+      $('#measureEditorBody').addEventListener('input', () => { $('#measureCheckResult').textContent = '已修改，需重新检查'; });
+      $('#measureEditorBody').addEventListener('change', () => { $('#measureCheckResult').textContent = '已修改，需重新检查'; });
+      $('#measureCheck').onclick = () => { try { const next = CubeMeasures.validate(readDraft()); const item = { ...next, _raw: next, title: next.title || '', sql: next.sql || '—', filters: next.filters || [], format: next.format || '', _originalName: originalName }; const list = data.metrics.map((m, i) => i === index ? item : m); if (index === null) list.push(item); CubeMeasures.patch(data.yaml || modelYamlText(data), data.form.id, list.map(CubeMeasures.fromUi)); error(''); $('#measureCheckResult').textContent = '定义检查通过 · 未编译 / 未查询'; } catch (e) { error(e.message); $('#measureCheckResult').textContent = '定义检查未通过'; } };
+      for (const [id, nextMode] of [['measureFormTab', 'form'], ['measureYamlTab', 'yaml']]) $(`#${id}`).onclick = () => {
+        try { const next = readDraft(); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('指标必须是 YAML 对象'); draft = next; mode = nextMode; error(''); $('#measureCheckResult').textContent = '未检查'; renderEditor(); } catch (e) { error(e.message); }
+      };
+    },
+    onConfirm: () => {
+      try {
+        const next = CubeMeasures.validate(readDraft());
+        if (data.metrics.some((m, i) => i !== index && m.name === next.name)) throw new Error(`指标名称重复：${next.name}`);
+        const item = { ...next, title: next.title || next.name, sql: next.sql || '—', format: next.format || '', filters: next.filters || [], _raw: next, _originalName: originalName };
+        const list = data.metrics.map((m, i) => i === index ? item : m); if (index === null) list.push(item);
+        const source = data.yaml || modelYamlText(data);
+        const yaml = CubeMeasures.patch(source, data.form.id, list.map(CubeMeasures.fromUi));
+        data.metrics = list; data.yaml = yaml; data.document = CubeMeasures.parse(yaml).toJS();
+        state.modelState = 'dirty'; state.modelStatusHidden = false; closeModal(); render();
+        if (data.filename) void saveRealModel(false); else toast('指标已加入草稿，请保存后发布');
+      } catch (e) { error(e.message); }
+    }
+  });
+}
+
 function memberModal(kind, index = null) {
   const data = currentModelData();
   const editing = index !== null && data[kind][index];
@@ -691,11 +805,7 @@ function memberModal(kind, index = null) {
     openModal({ title: "编辑维度展示信息", sub: "字段名称、SQL、类型和主键由数据源管理；如需变更，请修改数据源后重新建模。", icon: "D", wide: true, confirm: "保存维度", body: `<div class="grid cols-2"><label class="field">名称<input id="memberName" value="${escapeHtml(item.name)}" readonly></label><label class="field">业务标题<input id="memberTitle" value="${escapeHtml(item.title)}"></label><label class="field">字段 / SQL<input id="memberSql" class="mono" value="${escapeHtml(item.sql)}" readonly></label><label class="field">类型<input id="memberType" value="${escapeHtml(item.type)}" readonly></label><label class="field" style="grid-column:1/-1">描述<textarea id="memberDescription">${escapeHtml(item.description)}</textarea></label></div><div class="member-modal-switch"><span><strong>对外暴露</strong><small>关闭后不会出现在 Cube 元数据和查询选项中</small></span><button class="toggle ${item.public !== false ? "on" : ""}" id="memberPublic" aria-pressed="${item.public !== false}"><i></i></button></div><label class="checkline" style="margin-top:14px"><input id="memberPrimary" type="checkbox" ${item.primary ? "checked" : ""} disabled> 主键由数据源管理</label>`, afterOpen: () => { $("#memberPrimary")?.closest(".checkline")?.remove(); $("#memberPublic").onclick = () => { const next = $("#memberPublic").getAttribute("aria-pressed") !== "true"; $("#memberPublic").classList.toggle("on", next); $("#memberPublic").setAttribute("aria-pressed", String(next)); }; }, onConfirm: () => saveMember(kind, index, { name: item.name, title: $("#memberTitle").value.trim(), sql: item.sql, type: item.type, description: $("#memberDescription").value.trim(), primary: item.primary, public: $("#memberPublic").getAttribute("aria-pressed") === "true" }) });
     return;
   }
-  if (kind === "metrics") {
-    const item = editing || { title: "", name: "", type: "sum", sql: "", format: "整数", public: true, description: "" };
-    openModal({ title: editing ? "编辑指标" : "新建指标", sub: "支持常用聚合类型，高级能力保留在 YAML。", icon: "#", wide: true, confirm: "保存指标", body: `<div class="grid cols-2"><label class="field">名称<input id="memberName" value="${escapeHtml(item.name)}"></label><label class="field">业务标题<input id="memberTitle" value="${escapeHtml(item.title)}"></label><label class="field">类型<select id="memberType">${["sum", "count", "avg", "min", "max", "count_distinct", "number"].map(type => `<option ${type === item.type ? "selected" : ""}>${type}</option>`).join("")}</select></label><label class="field">字段 / SQL<input id="memberSql" class="mono" value="${escapeHtml(item.sql)}"></label><label class="field">展示格式<select id="memberFormat">${["¥ 金额", "整数", "% 百分比", "小数"].map(format => `<option ${format === item.format ? "selected" : ""}>${format}</option>`).join("")}</select></label><label class="field" style="grid-column:1/-1">业务描述<textarea id="memberDescription">${escapeHtml(item.description)}</textarea></label></div><div class="member-modal-switch"><span><strong>对外暴露</strong><small>关闭后不会出现在 Cube 元数据和查询选项中</small></span><button class="toggle ${item.public !== false ? "on" : ""}" id="memberPublic" aria-pressed="${item.public !== false}"><i></i></button></div>`, afterOpen: () => { $("#memberPublic").onclick = () => { const next = $("#memberPublic").getAttribute("aria-pressed") !== "true"; $("#memberPublic").classList.toggle("on", next); $("#memberPublic").setAttribute("aria-pressed", String(next)); }; }, onConfirm: () => saveMember(kind, index, { name: $("#memberName").value.trim(), title: $("#memberTitle").value.trim(), type: $("#memberType").value, sql: $("#memberSql").value.trim() || "—", format: $("#memberFormat").value, description: $("#memberDescription").value.trim(), public: $("#memberPublic").getAttribute("aria-pressed") === "true" }) });
-    return;
-  }
+  if (kind === "metrics") return measureModal(index);
   const item = editing || { title: "用户分析", name: "users", relationship: "many_to_one", source: "user_id", target: "id" };
   openModal({ title: editing ? "编辑模型关联" : "新增模型关联", sub: "选择字段后自动生成 Join SQL 并检查关系方向。", icon: "↔", wide: true, confirm: "保存关联", body: `<div class="grid cols-2"><label class="field">目标模型<select id="joinModel">${models.filter(model => model.id !== state.model).map(model => `<option value="${model.id}" ${model.id === item.name ? "selected" : ""}>${model.name}（${model.id}）</option>`).join("")}</select></label><label class="field">关系类型<select id="joinRelationship">${["many_to_one", "one_to_one", "one_to_many"].map(type => `<option ${type === item.relationship ? "selected" : ""}>${type}</option>`).join("")}</select></label><label class="field">来源字段<input id="joinSource" value="${escapeHtml(item.source)}"></label><label class="field">目标字段<input id="joinTarget" value="${escapeHtml(item.target)}"></label></div>`, onConfirm: () => {
     const target = models.find(model => model.id === $("#joinModel").value);
@@ -1168,7 +1278,7 @@ function handleUiAction(action, element) {
     const kind = element.dataset.kind;
     if (kind === "dimensions") return toast("维度字段由数据源管理，不能在此删除；请修改数据源后重新建模");
     const item = currentModelData()[kind][index];
-    return openModal({ title: `删除“${item.title}”？`, sub: "删除会进入当前草稿，应用前仍可查看差异。", icon: "!", confirm: "确认删除", body: '<div class="soft-box red"><strong>系统会检查引用关系，避免删除仍被使用的成员。</strong></div>', onConfirm: () => { const data = currentModelData(); data[kind].splice(index, 1); syncYamlPreview(data, kind); closeModal(); state.modelState = "dirty"; render(); toast("已从草稿中删除"); } });
+    return openModal({ title: `删除“${item.title}”？`, sub: "删除会进入当前草稿，应用前仍可查看差异。", icon: "!", confirm: "确认删除", body: '<div class="soft-box red"><strong>系统会检查引用关系，避免删除仍被使用的成员。</strong></div>', onConfirm: () => { const data = currentModelData(); try { if (kind === "metrics") { const list = data.metrics.filter((_, i) => i !== index); const yaml = CubeMeasures.patch(data.yaml || modelYamlText(data), data.form.id, list.map(CubeMeasures.fromUi)); data.metrics = list; data.yaml = yaml; data.document = CubeMeasures.parse(yaml).toJS(); } else { data[kind].splice(index, 1); syncYamlPreview(data, kind); } closeModal(); state.modelState = "dirty"; render(); toast("已从草稿中删除"); } catch (e) { toast(e.message); } } });
   }
   if (action === "toggle-public") {
     const data = currentModelData();
@@ -1576,10 +1686,10 @@ function uiModelFromDocument(file, payload, loadedNames) {
     title: item.title || item.name || "未命名维度", name: item.name || "", sql: String(item.sql ?? ""),
     type: item.type || "string", primary: !!item.primary_key, public: item.public !== false, description: item.description || "", _raw: item,
   }));
-  const metrics = (cube.measures || []).map((item) => ({
+  const metrics = (Array.isArray(cube.measures) ? cube.measures : Object.entries(cube.measures || {}).map(([name, value]) => ({ name, ...value }))).map((item) => ({
     title: item.title || item.name || "未命名指标", name: item.name || "", type: item.type || "number",
     sql: item.sql === undefined ? "—" : String(item.sql), format: typeof item.format === "string" ? item.format : "默认",
-    public: item.public !== false, description: item.description || "", _raw: item,
+    public: item.public !== false, description: item.description || "", filters: item.filters || [], currency: item.currency || "", _raw: item,
   }));
   const joins = (cube.joins || []).map((item) => {
     const sql = String(item.sql || "");
@@ -1627,7 +1737,7 @@ function syncDocumentFromUi(data) {
     return next;
   };
   cube.dimensions = data.dimensions.map((item) => memberDocument(item, "dimensions"));
-  cube.measures = data.metrics.map((item) => memberDocument(item, "metrics"));
+  cube.measures = data.metrics.map(CubeMeasures.fromUi).map(({ _originalName, ...item }) => item);
   cube.joins = data.joins.map((item) => ({ ...item._raw, name: item.name, relationship: item.relationship, sql: `{CUBE}.${item.source} = {${item.name}}.${item.target}` }));
   return document;
 }
@@ -1639,6 +1749,7 @@ function yamlPreviewScalar(value) {
 }
 
 function syncStructuredYamlPreview(data, kind) {
+  if (kind === "metrics") return CubeMeasures.patch(data.yaml || modelYamlText(data), data.form.id, data.metrics.map(CubeMeasures.fromUi));
   const sectionMap = { dimensions: "dimensions", metrics: "measures", joins: "joins" };
   const section = sectionMap[kind];
   const source = String(data?.yaml || "");
@@ -1729,6 +1840,7 @@ async function loadRealData({ keepPage = true } = {}) {
   runtime.toolsUpdatedAt = tools.updatedAt || "";
   runtime.jwtTokens = jwtList.tokens || [];
   runtime.mcpServers = mcpList.servers || [];
+  runtime.mcpDiagnostics = {};
   runtime.availableMcpModels = mcpList.availableModels || [];
   if (!runtime.mcpServers.some((server) => server.id === state.mcpServer)) state.mcpServer = runtime.mcpServers[0]?.id || "";
   const logText = [logs.stdout, logs.stderr].filter(Boolean).join("\n");
@@ -1914,10 +2026,14 @@ function renderMcpManagement() {
     const source = modelData[id]?.form?.source || String(model?.source || "default").split(".")[0] || "default";
     return `<div class="mcp-model-card"><strong>${escapeHtml(modelNames.get(id) || id)}</strong><small class="mono">${escapeHtml(id)}</small><small>数据源：${escapeHtml(source)} · ${escapeHtml(model?.status || "未加载")}</small></div>`;
   }).join("") || '<div class="empty compact"><b>暂无绑定模型</b></div>';
-  const overview = `<div class="mcp-overview-grid"><section class="mcp-section"><div class="mcp-section-head"><h3>接入信息</h3>${badge(selected.enabled ? "正常" : "已停用")}</div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>名称</span><strong>${escapeHtml(selected.name)}</strong><span></span></div><div class="mcp-endpoint-row"><span>Server ID</span><code>${escapeHtml(selected.id)}</code><span></span></div><div class="mcp-endpoint-row"><span>状态</span><span>${selected.enabled ? "已启用" : "已停用"}</span><span></span></div><div class="mcp-endpoint-row"><span>Endpoint</span><code>${escapeHtml(mcpEndpoint(selected))}</code><button class="link" data-action="copy-mcp-endpoint" data-mcp-server-id="${escapeHtml(selected.id)}">复制</button></div><div class="mcp-endpoint-row"><span>Transport</span><code>streamable-http</code><span></span></div><div class="mcp-endpoint-row"><span>鉴权</span><code>Authorization: Bearer &lt;MCP Server JWT&gt;</code><span></span></div></div></section><section class="mcp-section"><div class="mcp-section-head"><h3>说明（instructions）</h3></div><div class="mcp-section-body mcp-instructions">${escapeHtml(selected.instructions || "仅使用 cube_meta 返回的语义模型和成员；禁止猜测成员名称。")}</div></section></div>`;
+  const overview = `<div class="mcp-overview-grid"><section class="mcp-section"><div class="mcp-section-head"><h3>接入信息</h3>${badge(selected.enabled ? "正常" : "已停用")}</div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>名称</span><strong>${escapeHtml(selected.name)}</strong><span></span></div><div class="mcp-endpoint-row"><span>Server ID</span><code>${escapeHtml(selected.id)}</code><span></span></div><div class="mcp-endpoint-row"><span>状态</span><span>${selected.enabled ? "已启用" : "已停用"}</span><span></span></div><div class="mcp-endpoint-row"><span>Endpoint</span><code>${escapeHtml(mcpEndpoint(selected))}</code><button class="link" data-action="copy-mcp-endpoint" data-mcp-server-id="${escapeHtml(selected.id)}">复制</button></div><div class="mcp-endpoint-row"><span>Transport</span><code>streamable-http</code><span></span></div><div class="mcp-endpoint-row"><span>协议版本</span><code>2026-07-28</code><span></span></div><div class="mcp-endpoint-row"><span>兼容性</span><span>兼容旧版客户端</span><span></span></div><div class="mcp-endpoint-row"><span>鉴权</span><code>Authorization: Bearer &lt;MCP Server JWT&gt;</code><span></span></div></div></section><section class="mcp-section"><div class="mcp-section-head"><h3>说明（instructions）</h3></div><div class="mcp-section-body mcp-instructions">${escapeHtml(selected.instructions || "仅使用 cube_meta 返回的语义模型和成员；禁止猜测成员名称。")}</div></section></div>`;
   const modelPanel = `<section class="mcp-section"><div class="mcp-section-head"><div><h3>绑定语义模型</h3></div><span class="muted">${selected.modelIds.length} 个</span></div><div class="mcp-section-body"><div class="mcp-model-grid">${modelCards}</div></div></section>`;
   const tokenPanel = `<section class="mcp-section"><div class="mcp-section-head"><h3>服务密钥</h3><button class="btn primary small" data-action="create-mcp-token" data-mcp-server-id="${escapeHtml(selected.id)}">创建密钥</button></div><div class="table-wrap"><table class="table"><thead><tr><th>备注</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${tokens}</tbody></table></div></section>`;
-  const panels = { overview, models: modelPanel, tokens: tokenPanel };
+  const diagnostic = runtime.mcpDiagnostics?.[selected.id];
+  const discovery = diagnostic?.discovery;
+  const identity = discovery?._meta?.["io.modelcontextprotocol/serverInfo"];
+  const protocolPanel = `<details class="mcp-section mcp-troubleshooting" ${diagnostic ? "open" : ""}><summary>接入排查<span class="muted">查看协议详情</span></summary><div class="mcp-section-head"><h3>本地协议检测</h3><button class="btn small" data-action="diagnose-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}" ${selected.enabled ? "" : "disabled"}>检测协议</button></div><div class="mcp-section-body">${discovery ? `<div class="mcp-endpoint-row"><span>协议版本</span><code>${escapeHtml(discovery.supportedVersions.join(", "))}</code></div><div class="mcp-endpoint-row"><span>服务身份</span><code>${escapeHtml(identity ? `${identity.name}@${identity.version}` : "未提供")}</code></div><div class="mcp-endpoint-row"><span>能力</span><code>${escapeHtml(Object.keys(discovery.capabilities || {}).join(", "))}</code></div><div class="mcp-endpoint-row"><span>工具</span><span>${escapeHtml(diagnostic.tools.join(", "))}</span></div><div class="mcp-endpoint-row"><span>目录缓存</span><code>${escapeHtml(diagnostic.cache.cacheScope)} / ${escapeHtml(diagnostic.cache.ttlMs)} ms</code></div><p>本地协议检测通过 · ${escapeHtml(new Date(diagnostic.checkedAt).toLocaleString())}</p>` : "<p>点击检测，读取当前 Server 的版本、身份、能力和工具目录。</p>"}<p class="muted">检测范围为本地协议处理器；公网代理连通性和服务密钥鉴权需通过端到端测试验证。</p></div></details>`;
+  const panels = { overview: overview + protocolPanel, models: modelPanel, tokens: tokenPanel };
   return pageHead("MCP 管理", "每个 MCP Server 使用独立地址、独立密钥和语义模型白名单。", pageActions) +
     `<div class="model-workbench mcp-workbench"><aside class="model-browser"><div class="model-browser-head"><strong>MCP Server</strong><span class="muted">${servers.length}</span></div><div class="model-list">${serverList}</div></aside><div class="model-detail"><div class="model-titlebar mcp-detail-head"><div class="model-title"><span class="integration-icon">⌘</span><div><h2>${escapeHtml(selected.name)}</h2><p class="mono">${escapeHtml(selected.id)} · ${selected.modelIds.length} 个语义模型 · ${selectedTokens.filter((token) => token.status === "active").length} 个有效密钥</p></div></div><div class="actions"><button class="btn" data-action="edit-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">编辑</button><button class="btn ${selected.enabled ? "" : "primary"}" data-action="toggle-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">${selected.enabled ? "停用 Server" : "启用 Server"}</button><button class="btn danger" data-action="delete-mcp-server" data-mcp-server-id="${escapeHtml(selected.id)}">删除 MCP Server</button></div></div><div class="tabs mcp-tabs">${[["overview", "概览"], ["models", "语义模型"], ["tokens", "服务密钥"]].map(([id, label]) => `<button class="${state.mcpTab === id ? "active" : ""}" data-action="mcp-tab" data-mcp-tab="${id}">${label}</button>`).join("")}</div><div class="mcp-panel">${panels[state.mcpTab] || overview}</div></div></div>`;
 }
@@ -2701,6 +2817,20 @@ async function handleAction(action, element) {
     if (action === "export-glossary") { await downloadProtected("/api/glossary/export", "cube-glossary.json", "application/json"); return toast("业务术语已导出"); }
     if (action === "choose-glossary-import") return $("#glossaryImportInput")?.click();
     if (action === "delete-term") return openModal({ title: `删除标准术语“${glossary[index][1]}”？`, sub: `其 ${termAliases(glossary[index]).length} 个别名将同时停止参与归一化。`, icon: "!", confirm: "确认删除", body: '<div class="soft-box red"><strong>操作会写入真实术语表</strong></div>', onConfirm: async () => { try { await realApi(`/api/glossary?standard=${encodeURIComponent(glossary[index][1])}`, { method: "DELETE" }); closeModal(); await refreshAndToast("业务术语已删除"); } catch (error) { toast(error.message); } } });
+    if (action === "diagnose-mcp-server") {
+      const id = element?.dataset.mcpServerId;
+      if (!id) return;
+      element.disabled = true;
+      try {
+        const result = await realApi(`/api/mcp-servers/${encodeURIComponent(id)}/diagnostics`);
+        runtime.mcpDiagnostics ||= {};
+        runtime.mcpDiagnostics[id] = result.diagnostics;
+        render();
+        return toast("本地协议检测通过");
+      } catch (error) { delete runtime.mcpDiagnostics?.[id]; render(); toast(compactRealError(error)); }
+      finally { if (element.isConnected) element.disabled = false; }
+      return;
+    }
     if (action === "select-mcp-server") { state.mcpServer = element?.dataset.mcpServerId || ""; state.mcpTab = "overview"; return render(); }
     if (action === "mcp-tab") { state.mcpTab = element?.dataset.mcpTab || "overview"; return render(); }
     if (action === "new-mcp-server") return mcpServerModal();
@@ -2856,4 +2986,6 @@ document.addEventListener("keydown", (event) => {
   if (!localStorage.getItem(REAL_TOKEN_KEY)) return showRealLogin();
   try { await loadRealData(); $("#loginScreen").classList.remove("show"); }
   catch (error) { showRealLogin(`连接真实环境失败：${error.message}`); }
+})();
+
 })();

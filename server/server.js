@@ -23,6 +23,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const envfile = require('./lib/envfile');
 const models = require('./lib/models');
 const modelTransfer = require('./lib/model-transfer');
+const measureEditor = require('../public/measures');
 const jwtlib = require('./lib/jwt');
 const runx = require('./lib/run');
 const dbx = require('./lib/db');
@@ -195,22 +196,7 @@ async function fetchMcpTools() {
   const serverId = process.env.AMCP_CUBE_SERVER_ID || '';
   const key = process.env.AMCP_CUBE_API_KEY || '';
   if (!amcpBase || !serverId || !key) return [];
-  const url = amcpBase + '/mcp/' + serverId;
-  const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-API-Key': key };
-  await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'cube-admin-ui', version: '1.0' } } }),
-  }).catch(() => {});
-  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) });
-  const text = await response.text();
-  const data = text.split('\n').filter((line) => line.trim().startsWith('data:')).map((line) => line.trim().slice(5).trim());
-  const result = JSON.parse(data.join(''));
-  return ((result.result && result.result.tools) || []).map((tool) => ({
-    name: tool.name,
-    description: String(tool.description || '').slice(0, 300),
-    params: Object.keys((tool.inputSchema && tool.inputSchema.properties) || {}),
-  }));
+  return require('./lib/mcp-client').fetchExternalMcpTools(amcpBase + '/mcp/' + serverId, key);
 }
 
 function authOk(req) {
@@ -717,6 +703,13 @@ function resolveDs(name) {
 }
 
 function serveStatic(res, pathname) {
+  if (pathname.startsWith('/vendor/yaml/')) {
+    const base = path.join(path.dirname(require.resolve('yaml/package.json')), 'browser');
+    const file = path.resolve(base, pathname.slice('/vendor/yaml/'.length));
+    if (!file.startsWith(base + path.sep) || !file.endsWith('.js') || !fs.existsSync(file)) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
+    return fs.createReadStream(file).pipe(res);
+  }
   const p = pathname === '/' ? path.join(PUBLIC, 'index.html') : path.join(PUBLIC, pathname);
   const safe = p.startsWith(PUBLIC);
   if (!safe || !fs.existsSync(p) || fs.statSync(p).isDirectory()) {
@@ -765,6 +758,15 @@ async function handleApi(req, res, url) {
       } catch (error) { return send(400, { ok: false, error: error.message }); }
     }
     if (!serverId) return send(404, { ok: false, error: 'MCP Server 不存在' });
+    if (method === 'GET' && seg.length === 4 && seg[3] === 'diagnostics') {
+      const server = mcpServerById(serverId);
+      if (!server) return send(404, { ok: false, error: 'MCP Server 不存在' });
+      if (!server.enabled) return send(409, { ok: false, error: 'MCP Server 已停用' });
+      try {
+        const diagnostics = await nativeMcpForServer(server).diagnostics();
+        return send(200, { ok: true, diagnostics });
+      } catch (error) { return send(502, { ok: false, error: error.message }); }
+    }
     if (method === 'GET' && seg.length === 3) {
       const server = mcpServerById(serverId);
       return server ? send(200, { ok: true, server: mcpServerView(server) }) : send(404, { ok: false, error: 'MCP Server 不存在' });
@@ -1205,6 +1207,7 @@ async function handleApi(req, res, url) {
       if (doc.errors.length) throw new Error(doc.errors.map((error) => error.message).join('; '));
       const parsed = doc.toJS();
       if (!parsed || !Array.isArray(parsed.cubes) || !parsed.cubes.length) throw new Error('YAML 缺少 cubes 模型定义');
+      for (const cube of parsed.cubes) for (const measure of models.memberList(cube.measures)) measureEditor.validate(measure);
       const expectedCubeNames = parsed.cubes.map((cube) => String(cube?.name || '').trim()).filter(Boolean);
       if (expectedCubeNames.length !== parsed.cubes.length) throw new Error('YAML 中存在缺少 name 的 Cube 模型');
       const currentModels = models.list(DEPLOY_DIR);
@@ -1214,6 +1217,28 @@ async function handleApi(req, res, url) {
         // 自动建模的 putGenerated 不走此限制，负责在数据源变更后同步结构。
         models.assertDimensionStructureUnchanged(currentContent, content);
       }
+      // Check references against all model files, not only the currently edited file.
+      const project = { cubes: [], views: [] };
+      const previousProject = { cubes: [], views: [] };
+      for (const file of currentModels) {
+        const previous = YAML.parse(models.get(DEPLOY_DIR, file.name)) || {};
+        previousProject.cubes.push(...(previous.cubes || []));
+        previousProject.views.push(...(previous.views || []));
+        const next = file.name === name ? parsed : previous;
+        project.cubes.push(...(next.cubes || [])); project.views.push(...(next.views || []));
+      }
+      if (!currentModels.some(file => file.name === name)) project.cubes.push(...parsed.cubes);
+      for (const cube of previousProject.cubes) {
+        const nextCube = project.cubes.find(next => next.name === cube.name);
+        if (!nextCube) continue;
+        const names = new Set(models.memberList(nextCube.measures).map(m => m.name));
+        for (const measure of models.memberList(cube.measures)) {
+          if (names.has(measure.name)) continue;
+          const dependents = measureEditor.dependencies(project, cube.name, measure.name);
+          if (dependents.length) throw new Error(`指标 ${cube.name}.${measure.name} 被引用：${dependents.join('、')}。请先处理依赖。`);
+        }
+      }
+      measureEditor.validateGraph(project);
       const saved = models.put(DEPLOY_DIR, name, content);
       let restart = null;
       let loaded = null;
@@ -1245,7 +1270,9 @@ async function handleApi(req, res, url) {
       if (doc.errors.length) throw new Error(doc.errors.map((error) => error.message).join('; '));
       const parsed = doc.toJS();
       if (!parsed || !Array.isArray(parsed.cubes) || !parsed.cubes.length) throw new Error('YAML 缺少 cubes 模型定义');
-      return send(200, { ok: true, formatted: String(doc), cubes: parsed.cubes.map((cube) => cube.name) });
+      for (const cube of parsed.cubes) for (const measure of models.memberList(cube.measures)) measureEditor.validate(measure);
+      measureEditor.validateNames(parsed);
+      return send(200, { ok: true, validation: 'structure', compiled: false, queried: false, formatted: String(doc), cubes: parsed.cubes.map((cube) => cube.name) });
     } catch (e) { return send(400, { ok: false, error: e.message }); }
   }
 

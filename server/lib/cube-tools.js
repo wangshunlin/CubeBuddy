@@ -100,16 +100,15 @@ function createCubeTools({ apiBase, resolveGlossary, timeoutMs = 60000 } = {}) {
       return { cubes: [hit], summary: false, generatedAt: Date.now() };
     }
     return {
-      cubes: all.map((cube) => ({
-        name: cube.name,
-        title: cube.title,
-        description: cube.description,
-        measureCount: Array.isArray(cube.measures) ? cube.measures.length : 0,
-        dimensionCount: Array.isArray(cube.dimensions) ? cube.dimensions.length : 0,
-        segmentCount: Array.isArray(cube.segments) ? cube.segments.length : 0,
-      })),
-      summary: true,
-      generatedAt: Date.now(),
+      cubes: all.map((cube) => {
+        const title = String(cube.title || '').trim();
+        const description = String(cube.description || '').trim();
+        return {
+          name: cube.name,
+          ...(title && title !== cube.name ? { title } : {}),
+          ...(description && description !== title && description !== cube.name ? { description } : {}),
+        };
+      }),
     };
   }
 
