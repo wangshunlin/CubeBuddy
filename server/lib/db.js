@@ -108,12 +108,12 @@ async function buildExecArgs(ds, sql, useDb = true) {
       const args = ['exec'];
       if (ds.password) args.push('-e', 'PGPASSWORD=' + ds.password);
       args.push(cont, 'psql', '-h127.0.0.1', '-U', ds.user || 'postgres', '-t', '-A');
-      if (useDb && ds.database) args.push('-d', ds.database);
+      if (ds.database) args.push('-d', ds.database);
       args.push('-c', sql);
       return args;
     }
     const args = ['psql', '--no-password', '-h', ds.host || '127.0.0.1', '-p', String(ds.port || '5432'), '-U', ds.user || 'postgres', '-t', '-A'];
-    if (useDb && ds.database) args.push('-d', ds.database);
+    if (ds.database) args.push('-d', ds.database);
     args.push('-c', sql);
     return args;
   }

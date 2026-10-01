@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const envfile = require('./envfile');
+const YAML = require('yaml');
 
 const SYS_DBS = ['mysql', 'information_schema', 'performance_schema', 'sys', 'postgres', 'template0', 'template1'];
 
@@ -66,8 +67,16 @@ function validName(name) {
 
 // 新增/更新（同名覆盖）
 function upsert(deployDir, src) {
-  const name = String(src.name || '').trim();
-  if (!validName(name)) throw new Error('数据源名非法：字母开头、仅字母数字下划线（default 为保留名）');
+  let name = String(src.name || '').trim();
+  // Older open edit dialogs send the display label as name. Keep their existing binding.
+  if (!validName(name) && validName(src.oldName) && src.displayName === undefined && name) {
+    src = { ...src, displayName: name };
+    name = String(src.oldName).trim();
+  }
+  if (!validName(name)) throw new Error('数据源名非法：字母开头、仅字母数字下划线');
+  if (['postgres', 'pg', 'postgresql'].includes(String(src.type || '').toLowerCase()) && !String(src.database || '').trim()) {
+    throw new Error('请填写 PostgreSQL 连接数据库');
+  }
   const oldName = String(src.oldName || '').trim();
   const sources = read(deployDir);
   const existingName = oldName || name;
@@ -78,6 +87,7 @@ function upsert(deployDir, src) {
   const hit = hitIndex >= 0 ? sources[hitIndex] : null;
   const item = {
     name,
+    displayName: String(src.displayName ?? hit?.displayName ?? name).trim() || name,
     type: String(src.type || 'mysql'),
     host: String(src.host || ''),
     port: String(src.port || ''),
@@ -87,10 +97,51 @@ function upsert(deployDir, src) {
     ssl: !!src.ssl,
     container: String(src.container || ''),
   };
+  const connectionChanged = !hit || oldName && oldName !== name || ['type', 'host', 'port', 'database', 'user', 'password', 'ssl', 'container'].some(key => (key === 'ssl' ? Boolean(hit[key]) !== Boolean(item[key]) : String(hit[key] ?? '') !== String(item[key] ?? '')));
   if (hit) sources[hitIndex] = item;
   else sources.push(item);
-  write(deployDir, sources);
-  return { name, oldName: oldName || name, created: !hit, renamed: Boolean(oldName && oldName !== name), sources: sources.map((s) => mask(s)) };
+  const changes = oldName && oldName !== name ? sourceReferenceChanges(deployDir, oldName, name) : [];
+  const configPath = filePath(deployDir);
+  const originalConfig = fs.existsSync(configPath) ? fs.readFileSync(configPath) : null;
+  try {
+    for (const change of changes) {
+      fs.copyFileSync(change.path, change.path + '.bak');
+      fs.writeFileSync(change.path, change.next);
+    }
+    write(deployDir, sources);
+  } catch (error) {
+    for (const change of changes) fs.writeFileSync(change.path, change.original);
+    if (originalConfig) fs.writeFileSync(configPath, originalConfig);
+    else if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
+    throw error;
+  }
+  return { name, oldName: oldName || name, created: !hit, connectionChanged: Boolean(connectionChanged), renamed: Boolean(oldName && oldName !== name), sources: sources.map((s) => mask(s)) };
+}
+
+// Rename explicit bindings and implicit default bindings together with the source.
+// Parse every file before writing so malformed YAML cannot leave a partial rename.
+function sourceReferenceChanges(deployDir, oldName, newName) {
+  const dir = path.join(deployDir, 'schema');
+  if (!fs.existsSync(dir)) return [];
+  const changes = [];
+  for (const filename of fs.readdirSync(dir).filter(name => /\.ya?ml$/i.test(name))) {
+    const file = path.join(dir, filename);
+    const original = fs.readFileSync(file, 'utf8');
+    const doc = YAML.parseDocument(original);
+    if (doc.errors.length) throw new Error(`模型 ${filename} YAML 无效，无法更新数据源引用`);
+    let changed = false;
+    const cubes = doc.get('cubes');
+    for (const cube of cubes?.items || []) {
+      if (!YAML.isMap(cube)) continue;
+      const source = cube.get('data_source');
+      if (source === oldName || (oldName === 'default' && !source)) {
+        cube.set('data_source', newName);
+        changed = true;
+      }
+    }
+    if (changed) changes.push({ path: file, original, next: String(doc) });
+  }
+  return changes;
 }
 
 function remove(deployDir, name) {

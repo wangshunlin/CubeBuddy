@@ -1076,7 +1076,17 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     try {
       const startedAt = Date.now();
-      const ds = resolveDs(body.name);
+      let ds;
+      if (body.config && typeof body.config === 'object') {
+        const config = body.config;
+        const stored = config.oldName ? dsx.read(DEPLOY_DIR).find(item => item.name === config.oldName) : null;
+        if (config.oldName && !stored) throw new Error('原数据源不存在');
+        if (!String(config.host || '').trim()) throw new Error('请填写主机');
+        if (['postgres', 'pg', 'postgresql'].includes(config.type) && !String(config.database || '').trim()) throw new Error('请填写 PostgreSQL 连接数据库');
+        ds = { name: stored?.name || 'connection_test', type: config.type, host: String(config.host).trim(), port: String(config.port || ''), database: String(config.database || '').trim(), user: String(config.user || ''), password: config.password || stored?.password || '', ssl: !!config.ssl, container: stored?.container || '' };
+      } else {
+        ds = resolveDs(body.name);
+      }
       if (!ds) return send(400, { ok: false, error: '当前没有数据源，请先新增数据源' });
       const databases = await dbx.listDatabases(ds);
       return send(200, { ok: true, datasource: ds.name, durationMs: Date.now() - startedAt, databases: databases.length });

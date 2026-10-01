@@ -269,6 +269,7 @@ function trapFocus(container, event) {
 }
 
 function openModal({ title, sub = "", icon = "◇", body = "", confirm = "确认", wide = false, modalClass = "", onConfirm, afterOpen }) {
+  $("#sourceTestConnection")?.remove();
   modalLastFocused = document.activeElement;
   const modal = $("#modal");
   modal.classList.toggle("wide", wide);
@@ -400,7 +401,7 @@ function modelCatalogGroups() {
     const source = dataSources.find(item => item.name === sourceName);
     const database = source?.database || data?.form?.table?.split(".")[0] || "默认数据库";
     const key = `${sourceName}::${database}`;
-    if (!groups.has(key)) groups.set(key, { key, sourceName, sourceType: source?.type || "数据源", database, models: [] });
+    if (!groups.has(key)) groups.set(key, { key, sourceName, sourceLabel: source?.displayName || sourceName, sourceType: source?.type || "数据源", database, models: [] });
     groups.get(key).models.push(model);
   }
   return [...groups.values()];
@@ -415,11 +416,11 @@ function renderModelCatalog(model) {
     const open = state.modelCatalogCollapsed[key] !== true;
     const groupKey = `catalog-group-${index}`;
     return `<section class="catalog-source ${open ? "open" : ""}" data-catalog-group>
-      <button class="catalog-source-toggle" type="button" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-controls="${groupKey}"><span class="catalog-caret" aria-hidden="true">⌄</span><span class="catalog-source-icon">${escapeHtml(group.sourceType.slice(0, 2).toUpperCase())}</span><span class="catalog-source-name" title="${escapeHtml(group.sourceName)}">${escapeHtml(group.sourceName)}</span><span class="catalog-source-database" title="${escapeHtml(group.database)}">· ${escapeHtml(group.database)}</span><span class="catalog-source-count">${group.models.length}</span></button>
+      <button class="catalog-source-toggle" type="button" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-controls="${groupKey}"><span class="catalog-caret" aria-hidden="true">⌄</span><span class="catalog-source-icon">${escapeHtml(group.sourceType.slice(0, 2).toUpperCase())}</span><span class="catalog-source-name" title="${escapeHtml(group.sourceName)}">${escapeHtml(group.sourceLabel)}</span><span class="catalog-source-count">${group.models.length}</span></button>
       <div class="catalog-source-content" id="${groupKey}"><div class="catalog-database"><div class="catalog-models">${group.models.map(item => {
         const selected = item.id === model.id;
         const statusKey = item.status === "已加载" ? "loaded" : "draft";
-        const queryText = `${item.name} ${item.id} ${item.source}`.toLowerCase();
+        const queryText = `${item.name} ${item.id} ${item.source} ${modelData[item.id]?.form?.table || ""}`.toLowerCase();
         return `<button class="catalog-model ${selected ? "active" : ""}" type="button" data-model="${escapeHtml(item.id)}" data-model-status="${statusKey}" data-model-search="${escapeHtml(queryText)}"><span class="catalog-model-glyph">T</span><span class="catalog-model-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</small></span>${modelStatusDot(item.status)}</button>`;
       }).join("")}</div></div></div></section>`;
   }).join("");
@@ -453,7 +454,7 @@ function applyModelCatalogFilters() {
 
 function renderDatasources() {
   const rows = dataSources.map((source, index) => `<tr>
-    <td class="source-name-cell"><div class="entity"><span><strong>${escapeHtml(source.name)}</strong></span></div></td>
+    <td class="source-name-cell"><div class="entity"><span><strong>${escapeHtml(source.displayName || source.name)}</strong></span></div></td>
     <td>${escapeHtml(source.type)}</td><td class="mono">${escapeHtml(source.host)}:${escapeHtml(source.port)}</td><td>${escapeHtml(source.database)}</td><td>${source.models}</td><td class="source-status-cell">${badge(source.status)}</td>
     <td><button class="link" data-action="edit-source" data-index="${index}">编辑</button>　<button class="link" data-action="test-source" data-index="${index}">测试</button>　<button class="link bad" data-action="delete-source" data-index="${index}">删除</button></td>
   </tr>`).join("");
@@ -497,7 +498,7 @@ function modelHeaderActions() {
 
 function modelSourceSelect(form) {
   const selected = dataSources.some(source => source.name === form.source) ? form.source : "";
-  const options = [{ value: "", label: "不绑定数据源" }, ...dataSources.map(source => ({ value: source.name, label: source.name }))];
+  const options = [{ value: "", label: "不绑定数据源" }, ...dataSources.map(source => ({ value: source.name, label: source.displayName || source.name }))];
   const selectedLabel = options.find(option => option.value === selected)?.label || "不绑定数据源";
   return `<div class="model-source-select">
     <input type="hidden" data-model-field="source" value="${escapeHtml(selected)}">
@@ -1335,7 +1336,14 @@ async function realApi(path, options = {}) {
   const token = localStorage.getItem(REAL_TOKEN_KEY);
   if (token) headers.Authorization = `Bearer ${token}`;
   if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-  const response = await fetch(apiUrl(path), { ...options, headers });
+  const { timeoutMs = 30000, ...fetchOptions } = options;
+  let response;
+  try {
+    response = await fetch(apiUrl(path), { ...fetchOptions, headers, signal: options.signal || AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") throw new Error("请求超时，请刷新检查保存状态；应用操作可能仍在后台执行");
+    throw error;
+  }
   if (response.status === 401) {
     showRealLogin("管理员令牌已失效，请重新登录");
     throw new Error("未授权");
@@ -1687,7 +1695,7 @@ async function loadRealData({ keepPage = true } = {}) {
   Object.assign(environmentConfig, environment.environment || {});
 
   dataSources.splice(0, dataSources.length, ...(ds.sources || []).map((source) => ({
-    name: source.name, desc: source.name === "default" ? "默认数据源" : "业务数据源", type: typeLabel(source.type),
+    name: source.name, displayName: source.displayName || source.name, desc: source.name === "default" ? "默认数据源" : "业务数据源", type: typeLabel(source.type),
     host: source.host, port: source.port, database: source.database, user: source.user, password: source.password,
     models: 0, checked: "尚未检查", status: "未检查", ssl: !!source.ssl, container: source.container || "",
   })));
@@ -1972,25 +1980,72 @@ async function refreshAndToast(message = "真实数据已刷新") {
 }
 
 async function applyRealDatasources({ allowEmpty = false } = {}) {
-  await realApi("/api/datasources/apply", { method: "POST", body: JSON.stringify({ allowEmpty }) });
+  await realApi("/api/datasources/apply", { method: "POST", timeoutMs: 260000, body: JSON.stringify({ allowEmpty }) });
   await loadRealData();
 }
 
 function realSourceModal(index = null) {
   const editing = index !== null ? dataSources[index] : null;
   const source = editing || { name: "", desc: "", type: "MySQL", host: "", port: "3306", database: "", user: "root", ssl: false, container: "" };
-  openModal({ title: editing ? "编辑数据源" : "添加数据源", sub: "保存配置后会自动应用到 Cube。", icon: "", wide: true, modalClass: "source-modal", confirm: "保存配置", body: `<div class="source-modal-form"><div class="grid cols-2"><label class="field">数据源名称<input id="sourceName" value="${escapeHtml(source.name)}" ${editing?.name === "default" ? "disabled" : ""}></label><label class="field">数据库类型<select id="sourceType">${["MySQL", "PostgreSQL", "ClickHouse"].map((type) => `<option ${type === source.type ? "selected" : ""}>${type}</option>`).join("")}</select></label><label class="field">主机<input id="sourceHost" value="${escapeHtml(source.host)}" placeholder="例如 127.0.0.1"></label><label class="field">端口<input id="sourcePort" value="${escapeHtml(source.port)}"></label><label class="field">数据库名<input id="sourceDatabase" value="${escapeHtml(source.database)}"></label><label class="field">用户名<input id="sourceUser" value="${escapeHtml(source.user)}" autocomplete="username"></label><label class="field">密码<input id="sourcePassword" type="password" placeholder="${editing ? "留空保持原密码" : "请输入数据库密码"}" autocomplete="new-password"></label></div><label class="source-ssl-row"><span class="source-ssl-copy"><strong>SSL 连接</strong><small>需要数据库服务端支持 SSL 时开启</small></span><input id="sourceSsl" type="checkbox" ${source.ssl ? "checked" : ""}></label></div>`, onConfirm: async () => {
-    const payload = { name: $("#sourceName").value.trim(), oldName: editing?.name || "", type: $("#sourceType").value.toLowerCase().replace("postgresql", "postgres"), host: $("#sourceHost").value.trim(), port: $("#sourcePort").value.trim(), database: $("#sourceDatabase").value.trim(), user: $("#sourceUser").value.trim(), password: $("#sourcePassword").value, container: source.container || "", ssl: $("#sourceSsl").checked };
-    if (!payload.name || !payload.host || !payload.database) return toast("请填写名称、主机和数据库名");
-    setModalBusy();
+  const readSourceConfig = () => {
+    return { name: editing?.name || `ds_${Date.now().toString(36)}`, displayName: $("#sourceName").value.trim(), oldName: editing?.name || "", type: $("#sourceType").value.toLowerCase().replace("postgresql", "postgres"), host: $("#sourceHost").value.trim(), port: $("#sourcePort").value.trim(), database: $("#sourceDatabase").value.trim(), user: $("#sourceUser").value.trim(), password: $("#sourcePassword").value, container: source.container || "", ssl: $("#sourceSsl").checked };
+  };
+  openModal({ title: editing ? "编辑数据源" : "添加数据源", sub: "保存配置后会自动应用到 Cube。", icon: "", wide: true, modalClass: "source-modal", confirm: "保存配置", body: `<div class="source-modal-form"><div class="grid cols-2"><label class="field">数据源名称<input id="sourceName" value="${escapeHtml(source.displayName || source.name)}" ></label><label class="field">数据库类型<select id="sourceType">${["MySQL", "PostgreSQL", "ClickHouse"].map((type) => `<option ${type === source.type ? "selected" : ""}>${type}</option>`).join("")}</select></label><label class="field">主机<input id="sourceHost" value="${escapeHtml(source.host)}" placeholder="例如 127.0.0.1"></label><label class="field">端口<input id="sourcePort" value="${escapeHtml(source.port)}"></label><label class="field"><span id="sourceDatabaseLabel">默认数据库（选填）</span><input id="sourceDatabase" value="${escapeHtml(source.database)}" placeholder="留空后在自动建模中选择"><small id="sourceDatabaseHint">自动建模优先选择此数据库；留空则读取可访问的数据库列表。</small></label><label class="field">用户名<input id="sourceUser" value="${escapeHtml(source.user)}" autocomplete="username"></label><label class="field">密码<input id="sourcePassword" type="password" placeholder="${editing ? "留空保持原密码" : "请输入数据库密码"}" autocomplete="new-password"></label></div><label class="source-ssl-row"><span class="source-ssl-copy"><strong>SSL 连接</strong><small>需要数据库服务端支持 SSL 时开启</small></span><input id="sourceSsl" type="checkbox" ${source.ssl ? "checked" : ""}></label></div>`, afterOpen: () => {
+    const updateDatabaseField = () => {
+      const required = $("#sourceType").value === "PostgreSQL";
+      $("#sourceDatabaseLabel").textContent = required ? "连接数据库（必填）" : "默认数据库（选填）";
+      $("#sourceDatabase").required = required;
+      $("#sourceDatabase").placeholder = required ? "例如 postgres" : "留空后在自动建模中选择";
+      $("#sourceDatabaseHint").textContent = required ? "PostgreSQL 建立连接需要指定数据库。" : "自动建模优先选择此数据库；留空则读取可访问的数据库列表。";
+    };
+    $("#sourceType").onchange = updateDatabaseField;
+    updateDatabaseField();
+    $("#modalConfirm").insertAdjacentHTML("beforebegin", '<button type="button" class="btn" id="sourceTestConnection">测试连接</button>');
+    const testButton = $("#sourceTestConnection");
+    let testing = false;
+    $("#modalBody").addEventListener("input", () => { if (!testing) $("#modalFootNote").textContent = ""; });
+    testButton.onclick = async () => {
+      const config = readSourceConfig();
+      if (!config.host) return toast("请填写主机");
+      if (config.type === "postgres" && !config.database) return toast("请填写 PostgreSQL 连接数据库");
+      testing = true;
+      testButton.disabled = true;
+      testButton.textContent = "测试中…";
+      $("#modalConfirm").disabled = true;
+      const note = $("#modalFootNote");
+      note.textContent = "正在测试连接…";
+      try {
+        const result = await realApi("/api/datasources/test", { method: "POST", body: JSON.stringify({ config }) });
+        if (testButton.isConnected) note.textContent = `连接成功 · ${result.durationMs} ms`;
+      } catch (error) {
+        if (testButton.isConnected) note.textContent = `连接失败：${compactRealError(error)}`;
+      } finally {
+        testing = false;
+        if (testButton.isConnected) { testButton.disabled = false; testButton.textContent = "测试连接"; $("#modalConfirm").disabled = false; }
+      }
+    };
+  }, onConfirm: async () => {
+    const payload = readSourceConfig();
+    if (!payload.displayName || !payload.host) return toast("请填写名称和主机");
+    if (payload.type === "postgres" && !payload.database) return toast("请填写 PostgreSQL 连接数据库");
+    $("#sourceTestConnection").disabled = true;
+    setModalBusy("保存中…");
+    let saved = false;
     try {
-      await realApi("/api/datasources", { method: "POST", body: JSON.stringify(payload) });
-      await applyRealDatasources();
+      const result = await realApi("/api/datasources", { method: "POST", body: JSON.stringify(payload) });
+      saved = true;
+      if (result.connectionChanged !== false) {
+        setModalBusy("应用中…");
+        await applyRealDatasources();
+      } else {
+        await loadRealData();
+      }
       closeModal();
-      toast("数据源配置已保存并应用");
+      toast(result.connectionChanged === false ? "数据源名称已保存" : "数据源配置已保存并应用");
     } catch (error) {
       restoreModalActions("保存配置");
-      toast(`保存或应用失败：${compactRealError(error)}`);
+      $("#sourceTestConnection").disabled = false;
+      toast(`${saved ? "配置已保存，但应用或刷新失败" : "保存失败"}：${compactRealError(error)}`);
     }
   } });
 }
@@ -2011,7 +2066,7 @@ function realAutoModelModal() {
   const selectionKey = () => JSON.stringify([sourceName, databaseName]);
   const sourceOptions = dataSources.map((item, index) => {
     const type = item.type || "MySQL";
-    return `<button class="auto-source-option${index === 0 ? " active" : ""}" type="button" role="option" aria-selected="${index === 0}" data-source="${escapeHtml(item.name)}"><span class="auto-source-icon">${escapeHtml(type.slice(0, 1).toUpperCase())}</span><span class="auto-source-option-main"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(type)}</small></span></button>`;
+    return `<button class="auto-source-option${index === 0 ? " active" : ""}" type="button" role="option" aria-selected="${index === 0}" data-source="${escapeHtml(item.name)}"><span class="auto-source-icon">${escapeHtml(type.slice(0, 1).toUpperCase())}</span><span class="auto-source-option-main"><strong>${escapeHtml(item.displayName || item.name)}</strong><small>${escapeHtml(type)}</small></span></button>`;
   }).join("");
   openModal({
     title: "自动建模",
