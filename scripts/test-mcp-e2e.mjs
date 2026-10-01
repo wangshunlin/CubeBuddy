@@ -56,7 +56,6 @@ function rawHeaders(accessToken = token, extra = {}) {
 }
 
 function assertSuccessfulToolResult(result, name) {
-  assert.equal(result.resultType, 'complete', `${name} 缺少新版 resultType`);
   assert.notEqual(result.isError, true, `${name} 返回 MCP 错误：${result.content?.[0]?.text || '未知错误'}`);
   assert.ok(result.structuredContent && typeof result.structuredContent === 'object', `${name} 缺少 structuredContent`);
   const text = result.content?.find((item) => item.type === 'text')?.text;
@@ -132,6 +131,18 @@ await check('协议：新版发现与无初始化工具目录', async () => {
       assert.ok(result.capabilities.tools);
     } else assert.deepEqual(result.tools.map(tool => tool.name).sort(), expectedTools);
   }
+});
+
+await check('协议：原始工具响应包含新版 resultType', async () => {
+  const params = { name: 'cube_meta', arguments: {} };
+  const response = await fetch(endpoint, {
+    method: 'POST', headers: modernHeaders('tools/call', token, params.name),
+    body: JSON.stringify(modernRequest('tools/call', params)),
+  });
+  assert.equal(response.status, 200);
+  const { result } = await response.json();
+  assert.equal(result.resultType, 'complete');
+  assert.notEqual(result.isError, true);
 });
 
 let tools = [];
