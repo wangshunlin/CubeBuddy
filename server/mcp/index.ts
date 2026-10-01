@@ -19,13 +19,14 @@ interface NativeMcpOptions {
   allowedHosts: string[];
   allowedOrigins: string[];
   instructions?: string;
+  businessDescription?: string;
   audit?: (event: McpAuditEvent) => void;
   onerror?: (error: Error) => void;
 }
 
 export function createNativeMcp(options: NativeMcpOptions) {
   const handler = createMcpHandler(
-    ({ authInfo }) => buildCubeMcpServer({ service: options.service, authInfo, audit: options.audit, instructions: options.instructions }),
+    ({ authInfo }) => buildCubeMcpServer({ service: options.service, authInfo, audit: options.audit, instructions: options.instructions, businessDescription: options.businessDescription }),
     {
       legacy: 'stateless',
       onerror: options.onerror,

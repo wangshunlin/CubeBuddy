@@ -31,6 +31,7 @@ interface BuildServerOptions {
   authInfo?: AuthInfo;
   audit?: (event: McpAuditEvent) => void;
   instructions?: string;
+  businessDescription?: string;
 }
 
 const DEFAULT_INSTRUCTIONS =
@@ -136,7 +137,13 @@ const readOnlyAnnotations = {
   openWorldHint: false,
 } as const;
 
-export function buildCubeMcpServer({ service, authInfo, audit, instructions }: BuildServerOptions): McpServer {
+const toolDescriptions: Record<string, string> = require('../../public/mcp-descriptions.json');
+function describe(name: string, value = '') {
+  const business = String(value || '').trim().slice(0, 1000);
+  return business ? `业务范围：\n${business}\n\n工具用途：\n${toolDescriptions[name]}` : toolDescriptions[name];
+}
+
+export function buildCubeMcpServer({ service, authInfo, audit, instructions, businessDescription }: BuildServerOptions): McpServer {
   const server = new McpServer(
     { name: 'cubebuddy', version: '1.0.0' },
     {
@@ -148,7 +155,7 @@ export function buildCubeMcpServer({ service, authInfo, audit, instructions }: B
     'cube_meta',
     {
       title: '发现 Cube 语义模型',
-      description: '返回可用 Cube 的摘要列表。选择模型后必须调用 cube_meta_detail 获取真实成员。',
+      description: describe('cube_meta', businessDescription),
       outputSchema: cubeMetaOutputSchema,
       annotations: readOnlyAnnotations,
     },
@@ -159,7 +166,7 @@ export function buildCubeMcpServer({ service, authInfo, audit, instructions }: B
     'cube_meta_detail',
     {
       title: '获取 Cube 模型详情',
-      description: '按 cube_meta 返回的模型名称获取 measures、dimensions、segments 和 joins。',
+      description: describe('cube_meta_detail', businessDescription),
       inputSchema: z.object({
         name: z.string().min(1).describe('cube_meta 返回的 Cube 名称。'),
       }),
@@ -173,7 +180,7 @@ export function buildCubeMcpServer({ service, authInfo, audit, instructions }: B
     'cube_glossary_resolve',
     {
       title: '解析业务术语',
-      description: '把用户口语、简称或别名映射为标准术语。',
+      description: describe('cube_glossary_resolve', businessDescription),
       inputSchema: z.object({ text: z.string().min(1).describe('用户问题或待解析业务短语。') }),
       outputSchema: glossaryOutputSchema,
       annotations: readOnlyAnnotations,
@@ -185,7 +192,7 @@ export function buildCubeMcpServer({ service, authInfo, audit, instructions }: B
     'cube_search',
     {
       title: '搜索维度值',
-      description: '在指定完整维度 member 中执行 contains 搜索；dimension 必须来自 cube_meta_detail。',
+      description: describe('cube_search', businessDescription),
       inputSchema: z.object({
         dimension: z.string().min(1).describe('完整维度 member。'),
         query: z.string().min(1).describe('搜索关键词。'),
@@ -206,7 +213,7 @@ export function buildCubeMcpServer({ service, authInfo, audit, instructions }: B
     'cube_dry_run',
     {
       title: '校验 Cube 查询',
-      description: '校验单个 Cube Query Format 对象的成员和语法，不访问底层数据。',
+      description: describe('cube_dry_run', businessDescription),
       inputSchema: z.object({ query: cubeQuerySchema }),
       outputSchema: dryRunOutputSchema,
       annotations: readOnlyAnnotations,
@@ -223,7 +230,7 @@ export function buildCubeMcpServer({ service, authInfo, audit, instructions }: B
     'cube_load',
     {
       title: '执行 Cube 语义查询',
-      description: '执行单个 Cube Query Format 对象。query 必须是对象，不接受 JSON 字符串或对象数组。',
+      description: describe('cube_load', businessDescription),
       inputSchema: cubeLoadInputSchema,
       outputSchema: cubeLoadOutputSchema,
       annotations: readOnlyAnnotations,

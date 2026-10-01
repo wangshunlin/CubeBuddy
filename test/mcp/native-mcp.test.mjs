@@ -53,13 +53,14 @@ function fakeService() {
   };
 }
 
-async function startFixture({ instructions, service = fakeService() } = {}) {
+async function startFixture({ instructions, businessDescription, service = fakeService() } = {}) {
   const audit = [];
   const nativeMcp = createNativeMcp({
     service,
     allowedHosts: ['127.0.0.1', 'localhost'],
     allowedOrigins: ['http://127.0.0.1'],
     instructions,
+    businessDescription,
     verifyAccessToken(token) {
       if (token === 'wrong-scope') {
         return { token, clientId: 'scope-test', scopes: [], expiresAt: Math.floor(Date.now() / 1000) + 60 };
@@ -445,4 +446,18 @@ test('modern direct tool calls enforce model bindings before reaching Cube', asy
     assert.equal(JSON.parse(result.body.result.content[0].text).code, 'model_not_allowed');
   }
   assert.equal(source.calls.length, 0);
+});
+
+test('business descriptions are scoped to each Server and preserve fixed tool contracts', async (t) => {
+  const business = '应急力量覆盖救援队伍，可按地区查询。';
+  const fixtures = [await startFixture({ businessDescription: business }), await startFixture()];
+  t.after(async () => { for (const fixture of fixtures) await fixture.close(); });
+  const [custom, plain] = await Promise.all(fixtures.map(fixture => rawModern(fixture, 'tools/list')));
+  assert.equal(custom.body.result.tools.length, 6);
+  for (const tool of custom.body.result.tools) {
+    const baseline = plain.body.result.tools.find(item => item.name === tool.name);
+    assert.equal(tool.description, `业务范围：\n${business}\n\n工具用途：\n${baseline.description}`);
+    assert.deepEqual(tool.inputSchema, baseline.inputSchema);
+    assert.deepEqual(tool.outputSchema, baseline.outputSchema);
+  }
 });

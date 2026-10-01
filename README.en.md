@@ -322,3 +322,5 @@ Use an isolated database and a separate `state/` during development. Never use p
 ## License
 
 Licensed under the [Apache License 2.0](./LICENSE). Third-party components remain subject to their respective licenses.
+
+MCP Servers accept an optional business description (up to 1,000 characters), appended to all six tool descriptions. The editor previews the exact descriptions. Empty descriptions preserve existing behavior. Permissions remain enforced by model bindings; refresh the client tool catalog or reconnect after changes.

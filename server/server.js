@@ -535,7 +535,7 @@ function currentMcpServers() {
 }
 
 function nativeMcpForServer(server) {
-  const cacheKey = `${server.id}:${server.updatedAt}:${server.modelIds.join(',')}:${server.enabled}:${server.instructions}`;
+  const cacheKey = `${server.id}:${server.updatedAt}:${server.modelIds.join(',')}:${server.enabled}:${server.instructions}:${server.businessDescription}`;
   if (nativeMcpCache.has(cacheKey)) return nativeMcpCache.get(cacheKey);
   const nativeMcp = createNativeMcp({
     service: mcpServers.createScopedCubeToolService(cubeTools, server),
@@ -543,6 +543,7 @@ function nativeMcpForServer(server) {
     allowedHosts: mcpAllowedHosts(),
     allowedOrigins: mcpAllowedOrigins(),
     instructions: server.instructions,
+    businessDescription: server.businessDescription,
     audit: (event) => console.log(JSON.stringify({ event: 'mcp.tool', mcpServerId: server.id, ...event })),
     onerror: (error) => console.error(`MCP handler error: ${error.message || error}`),
   });

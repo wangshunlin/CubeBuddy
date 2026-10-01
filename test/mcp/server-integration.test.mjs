@@ -271,8 +271,9 @@ test('protocol diagnostics require admin, reflect configuration and never issue 
   });
   t.after(() => fixture.close());
   await adminRequest(fixture.endpoint, '/api/mcp-servers', {
-    method: 'POST', body: JSON.stringify({ id: 'diagnostic-agent', modelIds: ['orders'], instructions: '专属使用说明' }),
+    method: 'POST', body: JSON.stringify({ id: 'diagnostic-agent', modelIds: ['orders'], instructions: '专属使用说明', businessDescription: '应急力量覆盖救援队伍' }),
   });
+  assert.equal((await adminRequest(fixture.endpoint, '/api/mcp-servers/diagnostic-agent')).server.businessDescription, '应急力量覆盖救援队伍');
   const pathname = '/api/mcp-servers/diagnostic-agent/diagnostics';
   assert.equal((await fetch(new URL(pathname, fixture.endpoint))).status, 401);
   const { diagnostics } = await adminRequest(fixture.endpoint, pathname);

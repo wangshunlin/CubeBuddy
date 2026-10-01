@@ -6,6 +6,8 @@ runtime_dir=${CUBE_RELEASE_RUNTIME_DIR:-/opt/cube-console}
 state_dir=${CUBE_RELEASE_STATE_DIR:-/opt/cube-console-release-state}
 cube_port=${CUBE_RELEASE_CUBE_PORT:-18180}
 
+ssh() { command ssh -p 2222 "$@"; }
+
 target_file=${1:-$state_dir/previous.env}
 if [[ $target_file != /* ]]; then
   echo "回滚参数必须是服务器上的绝对状态文件路径。" >&2

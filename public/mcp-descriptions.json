@@ -1,0 +1,8 @@
+{
+  "cube_meta": "返回可用 Cube 的摘要列表。选择模型后必须调用 cube_meta_detail 获取真实成员。",
+  "cube_meta_detail": "按 cube_meta 返回的模型名称获取 measures、dimensions、segments 和 joins。",
+  "cube_glossary_resolve": "把用户口语、简称或别名映射为标准术语。",
+  "cube_search": "在指定完整维度 member 中执行 contains 搜索；dimension 必须来自 cube_meta_detail。",
+  "cube_dry_run": "校验单个 Cube Query Format 对象的成员和语法，不访问底层数据。",
+  "cube_load": "执行单个 Cube Query Format 对象。query 必须是对象，不接受 JSON 字符串或对象数组。"
+}

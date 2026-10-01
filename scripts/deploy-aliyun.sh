@@ -19,11 +19,11 @@ ssh_keepalive_interval=${CUBE_RELEASE_SSH_KEEPALIVE_INTERVAL:-15}
 ssh_keepalive_count=${CUBE_RELEASE_SSH_KEEPALIVE_COUNT:-4}
 
 ssh() {
-  command ssh -o "ServerAliveInterval=$ssh_keepalive_interval" -o "ServerAliveCountMax=$ssh_keepalive_count" -o TCPKeepAlive=yes "$@"
+  command ssh -p 2222 -o "ServerAliveInterval=$ssh_keepalive_interval" -o "ServerAliveCountMax=$ssh_keepalive_count" -o TCPKeepAlive=yes "$@"
 }
 
 scp() {
-  command scp -o "ServerAliveInterval=$ssh_keepalive_interval" -o "ServerAliveCountMax=$ssh_keepalive_count" -o TCPKeepAlive=yes "$@"
+  command scp -P 2222 -o "ServerAliveInterval=$ssh_keepalive_interval" -o "ServerAliveCountMax=$ssh_keepalive_count" -o TCPKeepAlive=yes "$@"
 }
 
 repo_root=$(git rev-parse --show-toplevel)

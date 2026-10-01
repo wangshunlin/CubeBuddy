@@ -33,6 +33,7 @@ function normalizeServer(input, { requiredId = true } = {}) {
   return {
     id,
     name: String(input.name || '').trim().slice(0, 80) || id,
+    businessDescription: String(input.businessDescription || '').trim().slice(0, 1000),
     instructions: String(input.instructions || '').trim().slice(0, 2000),
     enabled: input.enabled !== false,
     modelIds,

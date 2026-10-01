@@ -1,5 +1,16 @@
 (async function initializeConsole() {
 const assetBase = new URL(".", document.currentScript.src);
+const toolDescriptions = await fetch(new URL("mcp-descriptions.json", assetBase)).then(response => {
+  if (!response.ok) throw new Error('工具描述加载失败');
+  return response.json();
+});
+const CubeMcpDescriptions = {
+  tools: toolDescriptions,
+  describe(name, value = '') {
+    const business = String(value || '').trim().slice(0, 1000);
+    return business ? `业务范围：\n${business}\n\n工具用途：\n${toolDescriptions[name]}` : toolDescriptions[name];
+  },
+};
 window.CubeYaml = await import(new URL("vendor/yaml/index.js", assetBase).href);
 await import(new URL("measures.js", assetBase).href);
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -1617,15 +1628,21 @@ function mcpServerModal(server = null) {
     icon: "⌘",
     wide: true,
     confirm: editing ? "保存修改" : "创建 MCP Server",
-    body: `<div class="grid cols-2"><label class="field">名称<input id="mcpServerName" maxlength="80" value="${escapeHtml(server?.name || "")}" placeholder="例如：销售分析 MCP"></label><label class="field">Server ID<input id="mcpServerId" maxlength="63" value="${escapeHtml(server?.id || "")}" placeholder="例如：sales-agent" ${editing ? "readonly" : ""}><small>用于生成 MCP Endpoint，创建后不可修改。</small></label><label class="field" style="grid-column:1/-1">说明（instructions）<textarea id="mcpServerInstructions" maxlength="2000" placeholder="例如：仅用于销售分析，先调用 cube_meta 获取可用模型。">${escapeHtml(server?.instructions || "")}</textarea><small>作为 MCP instructions 提供给 AI；实际访问权限仍由绑定语义模型控制。</small></label></div><div class="field" style="margin-top:18px"><span>绑定语义模型</span><div class="transfer-box"><section class="transfer-pane"><div class="transfer-pane-head"><strong>可选语义模型</strong><span id="mcpTransferAvailableCount"></span></div><div class="transfer-list" id="mcpTransferAvailable"></div></section><div class="transfer-actions"><button id="mcpTransferAdd" type="button" title="添加所选模型">→</button><button id="mcpTransferRemove" type="button" title="移除所选模型">←</button></div><section class="transfer-pane"><div class="transfer-pane-head"><strong>已绑定语义模型</strong><span id="mcpTransferSelectedCount"></span></div><div class="transfer-list" id="mcpTransferSelected"></div></section></div></div>`,
+    body: `<div class="grid cols-2"><label class="field">名称<input id="mcpServerName" maxlength="80" value="${escapeHtml(server?.name || "")}" placeholder="例如：销售分析 MCP"></label><label class="field">Server ID<input id="mcpServerId" maxlength="63" value="${escapeHtml(server?.id || "")}" placeholder="例如：sales-agent" ${editing ? "readonly" : ""}><small>用于生成 MCP Endpoint，创建后不可修改。</small></label><label class="field" style="grid-column:1/-1">业务说明<textarea id="mcpServerBusinessDescription" maxlength="1000" placeholder="描述业务范围、常用表达及能回答的问题，例如：应急力量目前覆盖救援队伍，可按地区查询。">${escapeHtml(server?.businessDescription || "")}</textarea><small>可选，最多 1,000 字。附加到六个工具的描述中，帮助 AI 选择工具；模型绑定变化时请同步检查。</small></label><details style="grid-column:1/-1"><summary>工具描述预览</summary><div id="mcpToolDescriptionPreview"></div></details><label class="field" style="grid-column:1/-1">说明（instructions）<textarea id="mcpServerInstructions" maxlength="2000" placeholder="例如：仅用于销售分析，先调用 cube_meta 获取可用模型。">${escapeHtml(server?.instructions || "")}</textarea><small>作为 MCP instructions 提供给 AI；实际访问权限仍由绑定语义模型控制。</small></label></div><div class="field" style="margin-top:18px"><span>绑定语义模型</span><div class="transfer-box"><section class="transfer-pane"><div class="transfer-pane-head"><strong>可选语义模型</strong><span id="mcpTransferAvailableCount"></span></div><div class="transfer-list" id="mcpTransferAvailable"></div></section><div class="transfer-actions"><button id="mcpTransferAdd" type="button" title="添加所选模型">→</button><button id="mcpTransferRemove" type="button" title="移除所选模型">←</button></div><section class="transfer-pane"><div class="transfer-pane-head"><strong>已绑定语义模型</strong><span id="mcpTransferSelectedCount"></span></div><div class="transfer-list" id="mcpTransferSelected"></div></section></div></div>`,
     afterOpen: () => {
       renderTransfer();
+      const renderDescriptions = () => {
+        const business = $("#mcpServerBusinessDescription").value;
+        $("#mcpToolDescriptionPreview").innerHTML = Object.keys(CubeMcpDescriptions.tools).map(name => `<details><summary class="mono">${escapeHtml(name)}</summary><pre style="white-space:pre-wrap">${escapeHtml(CubeMcpDescriptions.describe(name, business))}</pre></details>`).join("");
+      };
+      $("#mcpServerBusinessDescription").oninput = renderDescriptions;
+      renderDescriptions();
       $("#mcpTransferAdd").onclick = () => { availableSelection.forEach((id) => selectedIds.add(id)); availableSelection.clear(); renderTransfer(); };
       $("#mcpTransferRemove").onclick = () => { selectedSelection.forEach((id) => selectedIds.delete(id)); selectedSelection.clear(); renderTransfer(); };
     },
     onConfirm: async () => {
       const modelIds = [...selectedIds];
-      const payload = { name: $("#mcpServerName").value.trim(), id: $("#mcpServerId").value.trim(), instructions: $("#mcpServerInstructions").value.trim(), modelIds };
+      const payload = { name: $("#mcpServerName").value.trim(), id: $("#mcpServerId").value.trim(), instructions: $("#mcpServerInstructions").value.trim(), businessDescription: $("#mcpServerBusinessDescription").value.trim(), modelIds };
       if (!payload.name || !payload.id || !modelIds.length) return toast("请填写名称、Server ID，并至少绑定一个语义模型");
       setModalBusy();
       try {
@@ -1633,7 +1650,7 @@ function mcpServerModal(server = null) {
         state.mcpServer = result.server.id;
         closeModal();
         await loadRealData();
-        toast(editing ? "MCP Server 已更新" : "MCP Server 已创建");
+        toast(editing ? "MCP Server 已更新，请刷新客户端工具目录或重新连接" : "MCP Server 已创建");
       } catch (error) { restoreModalActions(editing ? "保存修改" : "创建 MCP Server"); toast(compactRealError(error)); }
     },
   });
@@ -2026,7 +2043,7 @@ function renderMcpManagement() {
     const source = modelData[id]?.form?.source || String(model?.source || "default").split(".")[0] || "default";
     return `<div class="mcp-model-card"><strong>${escapeHtml(modelNames.get(id) || id)}</strong><small class="mono">${escapeHtml(id)}</small><small>数据源：${escapeHtml(source)} · ${escapeHtml(model?.status || "未加载")}</small></div>`;
   }).join("") || '<div class="empty compact"><b>暂无绑定模型</b></div>';
-  const overview = `<div class="mcp-overview-grid"><section class="mcp-section"><div class="mcp-section-head"><h3>接入信息</h3>${badge(selected.enabled ? "正常" : "已停用")}</div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>名称</span><strong>${escapeHtml(selected.name)}</strong><span></span></div><div class="mcp-endpoint-row"><span>Server ID</span><code>${escapeHtml(selected.id)}</code><span></span></div><div class="mcp-endpoint-row"><span>状态</span><span>${selected.enabled ? "已启用" : "已停用"}</span><span></span></div><div class="mcp-endpoint-row"><span>Endpoint</span><code>${escapeHtml(mcpEndpoint(selected))}</code><button class="link" data-action="copy-mcp-endpoint" data-mcp-server-id="${escapeHtml(selected.id)}">复制</button></div><div class="mcp-endpoint-row"><span>Transport</span><code>streamable-http</code><span></span></div><div class="mcp-endpoint-row"><span>协议版本</span><code>2026-07-28</code><span></span></div><div class="mcp-endpoint-row"><span>兼容性</span><span>兼容旧版客户端</span><span></span></div><div class="mcp-endpoint-row"><span>鉴权</span><code>Authorization: Bearer &lt;MCP Server JWT&gt;</code><span></span></div></div></section><section class="mcp-section"><div class="mcp-section-head"><h3>说明（instructions）</h3></div><div class="mcp-section-body mcp-instructions">${escapeHtml(selected.instructions || "仅使用 cube_meta 返回的语义模型和成员；禁止猜测成员名称。")}</div></section></div>`;
+  const overview = `<div class="mcp-overview-grid"><section class="mcp-section"><div class="mcp-section-head"><h3>接入信息</h3>${badge(selected.enabled ? "正常" : "已停用")}</div><div class="mcp-section-body"><div class="mcp-endpoint-row"><span>名称</span><strong>${escapeHtml(selected.name)}</strong><span></span></div><div class="mcp-endpoint-row"><span>Server ID</span><code>${escapeHtml(selected.id)}</code><span></span></div><div class="mcp-endpoint-row"><span>状态</span><span>${selected.enabled ? "已启用" : "已停用"}</span><span></span></div><div class="mcp-endpoint-row"><span>Endpoint</span><code>${escapeHtml(mcpEndpoint(selected))}</code><button class="link" data-action="copy-mcp-endpoint" data-mcp-server-id="${escapeHtml(selected.id)}">复制</button></div><div class="mcp-endpoint-row"><span>Transport</span><code>streamable-http</code><span></span></div><div class="mcp-endpoint-row"><span>协议版本</span><code>2026-07-28</code><span></span></div><div class="mcp-endpoint-row"><span>兼容性</span><span>兼容旧版客户端</span><span></span></div><div class="mcp-endpoint-row"><span>鉴权</span><code>Authorization: Bearer &lt;MCP Server JWT&gt;</code><span></span></div></div></section><section class="mcp-section"><div class="mcp-section-head"><h3>业务与使用说明</h3></div><div class="mcp-section-body mcp-instructions"><strong>业务说明</strong><p>${escapeHtml(selected.businessDescription || "未填写")}</p><strong>使用说明（instructions）</strong><p>${escapeHtml(selected.instructions || "仅使用 cube_meta 返回的语义模型和成员；禁止猜测成员名称。")}</p></div></section></div>`;
   const modelPanel = `<section class="mcp-section"><div class="mcp-section-head"><div><h3>绑定语义模型</h3></div><span class="muted">${selected.modelIds.length} 个</span></div><div class="mcp-section-body"><div class="mcp-model-grid">${modelCards}</div></div></section>`;
   const tokenPanel = `<section class="mcp-section"><div class="mcp-section-head"><h3>服务密钥</h3><button class="btn primary small" data-action="create-mcp-token" data-mcp-server-id="${escapeHtml(selected.id)}">创建密钥</button></div><div class="table-wrap"><table class="table"><thead><tr><th>备注</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${tokens}</tbody></table></div></section>`;
   const diagnostic = runtime.mcpDiagnostics?.[selected.id];

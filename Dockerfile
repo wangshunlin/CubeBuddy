@@ -8,6 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.mcp.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --registry="${NPM_REGISTRY}"
 COPY server/mcp ./server/mcp
+COPY public/mcp-descriptions.json ./public/mcp-descriptions.json
 COPY server/lib/jwt.js ./server/lib/jwt.js
 COPY scripts/test-mcp-e2e.mjs scripts/mcp-protocol.mjs ./scripts/
 RUN npm run build:mcp
